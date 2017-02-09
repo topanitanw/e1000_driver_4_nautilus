@@ -63,6 +63,10 @@
 #ifdef NAUT_CONFIG_VIRTIO_PCI
 #include <dev/virtio_pci.h>
 #endif
+// Panitan
+#ifdef NAUT_CONFIG_E1000_PCI
+#include <dev/e1000_pci.h>
+#endif
 #ifdef NAUT_CONFIG_RAMDISK
 #include <dev/ramdisk.h>
 #endif
@@ -365,6 +369,10 @@ init (unsigned long mbd,
 
 #ifdef NAUT_CONFIG_VIRTIO_PCI
     virtio_pci_init(naut);
+#endif
+// Panitan     
+#ifdef NAUT_CONFIG_E1000_PCI
+    e1000_pci_init(naut);
 #endif
 
     nk_fs_init();

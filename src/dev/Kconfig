@@ -101,6 +101,20 @@ config DEBUG_VIRTIO_PCI
     help
       Turn on debug prints for the Virtio 
 
+config E1000_PCI
+    bool "Core E1000 PCI Driver"
+    depends on X86_64_HOST
+    default n
+    help
+      Adds the basic E1000 PCI interface
+
+config DEBUG_E1000_PCI
+    bool "Debug E1000 PCI"
+    depends on DEBUG_PRINTS && E1000_PCI
+    default n
+    help
+      Turn on debug prints for the E1000 
+      
 config RAMDISK
     bool "RAM Disk Support"
     default n

@@ -12,6 +12,8 @@
 #define ERROR(fmt, args...) ERROR_PRINT("E1000_PCI: ERROR: " fmt, ##args)
 #define READ(d, o) (*((volatile uint32_t*)(((d)->mem_start)+(o))))
 #define WRITE(d, o, v) ((*((volatile uint32_t*)(((d)->mem_start)+(o))))=(v))
+#define READL(d, o) (*((volatile uint64_t*)(((d)->mem_start)+(o))))
+#define WRITEL(d, o, v) ((*((volatile uint64_t*)(((d)->mem_start)+(o))))=(v))
 
 // linked list of e1000 devices
 // static global var to this only file
@@ -150,7 +152,9 @@ int e1000_pci_init(struct naut_info * naut)
         DEBUG("e1000 status=0x%x\n", status);
         uint32_t mac_low=READ(vdev, 0x5400);
         uint32_t mac_high=READ(vdev, 0x5404);        
-        DEBUG("e1000 mac_high=0x%x mac_low=0x%x\n", mac_high, mac_low);        
+        uint64_t macall=((uint64_t)mac_low+((uint64_t)mac_high<<32))&(0xffffffffffffffff >> 12);
+        DEBUG("e1000 mac=0x%lX\n", macall);        
+        DEBUG("e1000 low_mac=0x%X\n", mac_low);        
         list_add(&dev_list, &vdev->e1000_node);
       }
       
@@ -164,6 +168,3 @@ int e1000_pci_deinit()
   INFO("deinited\n");
   return 0;
 }
-
-
-

@@ -18,24 +18,12 @@
 // linked list of e1000 devices
 // static global var to this only file
 static struct list_head dev_list;
-
-struct e1000_dev {
-  // for our linked list of virtio devices
-  struct list_head e1000_node;
-  // a pointer to the base class
-  struct pci_dev *pci_dev;
-  // pci interrupt and interupt vector
-  uint8_t   pci_intr;  // number on bus
-  uint8_t   intr_vec;  // number we will see
-
-  // Where registers are mapped into the I/O address space
-  uint16_t  ioport_start;
-  uint16_t  ioport_end;  
-
-  // Where registers are mapped into the physical memory address space
-  uint64_t  mem_start;
-  uint64_t  mem_end;
-};
+// TODO allocate rx_desc and tx_desc for only one packet -> 4 descriptors
+static struct e1000_rx_desc rx_desc[4];
+static struct e1000_tx_desc tx_desc[4];
+// transmitting buffer
+static void *tx_buffer;
+static struct e1000_dev *vdev;
 
 int e1000_pci_init(struct naut_info * naut)
 {
@@ -66,7 +54,7 @@ int e1000_pci_init(struct naut_info * naut)
       // intel vendor id and e1000 device id
       if (cfg->vendor_id==0x8086 && cfg->device_id==0x100E) {
         DEBUG("E1000 Device Found\n");
-        struct e1000_dev *vdev;
+        // struct e1000_dev *vdev;
   
         vdev = malloc(sizeof(struct e1000_dev));
         if (!vdev) {
@@ -156,10 +144,24 @@ int e1000_pci_init(struct naut_info * naut)
         DEBUG("e1000 mac=0x%lX\n", macall);        
         DEBUG("e1000 low_mac=0x%X\n", mac_low);        
         list_add(&dev_list, &vdev->e1000_node);
-      }
-      
+      }      
     }
   }
+
+  // allocate transmitting buffer for 64kB.
+  // tx_buffer = memalign(16, 64*1024);
+  // FIXME 64kB and 16byte ligned
+  tx_buffer = malloc(64*1024);
+  if (!tx_buffer) {
+    ERROR("Cannot allocate tx buffer\n");
+    return -1;
+  }
+
+  // store the address of the memory in TDBAL/TDBAH
+  WRITE(vdev, 0x03800, (uint32_t)(0x00000000ffffffff & (uint64_t) tx_buffer));
+  WRITE(vdev, 0x03804, (uint32_t)((0xffffffff00000000 & (uint64_t) tx_buffer) >> 32));
+  DEBUG("tx_buffer=0x%016lx, TDBAL=0x%08x, TDBAH=0x%08x\n",
+        tx_buffer, READ(vdev, 0x03800), READ(vdev, 0x03804));
   return 0;
 }
 

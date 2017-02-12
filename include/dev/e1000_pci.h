@@ -29,11 +29,21 @@ struct e1000_rx_desc {
   volatile uint16_t special;
 } __attribute__((packed));
 
+// legacy mode
 struct e1000_tx_desc {
   volatile uint64_t addr;
   volatile uint16_t length;
   volatile uint8_t cso;
-  volatile uint8_t cmd;
+  // volatile uint8_t cmd;
+  volatile struct {
+    uint_t eop : 1;
+    uint_t ifcs: 1;
+    uint_t ic  : 1;
+    uint_t rs  : 1;
+    uint_t dext: 1;
+    uint_t vle : 1;
+    uint_t ide : 1;
+  } cmd;
   volatile uint8_t status;
   volatile uint8_t css;
   volatile uint16_t special;

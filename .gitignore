@@ -6,3 +6,4 @@ tags
 *.iso
 *~
 *.out
+*.pcap

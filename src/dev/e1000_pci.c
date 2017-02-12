@@ -1,6 +1,7 @@
 #include <nautilus/nautilus.h>
 #include <dev/pci.h>
 #include <dev/e1000_pci.h>
+#include <nautilus/cpu.h> // warrior
 
 #ifndef NAUT_CONFIG_DEBUG_E1000_PCI
 #undef DEBUG_PRINT
@@ -14,6 +15,19 @@
 #define WRITE(d, o, v) ((*((volatile uint32_t*)(((d)->mem_start)+(o))))=(v))
 #define READL(d, o) (*((volatile uint64_t*)(((d)->mem_start)+(o))))
 #define WRITEL(d, o, v) ((*((volatile uint64_t*)(((d)->mem_start)+(o))))=(v))
+/*
+#define IO_READ(d, o) inl((volatile uint32_t*)(((d)->ioport_start)+(o)))
+#define IO_WRITE(d, o, v) outl((v),(volatile uint32_t*)(((d)->ioport_start)+(o)))
+#define IODATA_READ(d) (IO_READ((d), 0x4))
+#define IODATA_WRITE(d, v) (IO_WRITE((d), 0x4, (v)))
+#define IOADDR_WRITE(d, v) (IO_WRITE((d), 0x0, (v)))*/
+// warrior -> try this way later V
+#define IO_READ(d, o) (*((volatile uint32_t*)(((d)->ioport_start)+(o))))
+#define IO_WRITE(d, o, v) ((*((volatile uint32_t*)(((d)->ioport_start)+(o))))=(v))
+#define IODATA_READ(d) (IO_READ((d), (volatile uint32_t*)0x4))
+#define IODATA_WRITE(d, v) (IO_WRITE((d), (volatile uint32_t*)0x4, (v)))
+#define IOADDR_WRITE(d, v) (IO_WRITE((d), (volatile uint32_t*)0x0, (v)))
+#define TDT 0x3818
 
 // linked list of e1000 devices
 // static global var to this only file
@@ -150,7 +164,7 @@ int e1000_pci_init(struct naut_info * naut)
 
   // allocate transmitting buffer for 64kB.
   // tx_buffer = memalign(16, 64*1024);
-  // FIXME 64kB and 16byte ligned
+  // FIXME 16byte aligned 64kB, min = 128b
   tx_buffer = malloc(64*1024);
   if (!tx_buffer) {
     ERROR("Cannot allocate tx buffer\n");
@@ -162,6 +176,47 @@ int e1000_pci_init(struct naut_info * naut)
   WRITE(vdev, 0x03804, (uint32_t)((0xffffffff00000000 & (uint64_t) tx_buffer) >> 32));
   DEBUG("tx_buffer=0x%016lx, TDBAL=0x%08x, TDBAH=0x%08x\n",
         tx_buffer, READ(vdev, 0x03800), READ(vdev, 0x03804));
+  // write tdlen
+  WRITE(vdev, 0x03808, 64*1024);
+  // write the tdh, tdt with 0
+  WRITE(vdev, 0x03810, 0);
+  WRITE(vdev, 0x03818, 0);
+  // write tctl register
+  WRITE(vdev, 0x00400, 0x0004010a);
+  //IOADDR_WRITE(vdev, 0x00400);
+  //IODATA_WRITE(vdev, 0x0004010a);
+  // write tipg regsiter     00,00 0000 0110,0000 0010 00,00 0000 1010
+  WRITE(vdev, 0x00410, 0x0060200a);
+  //IOADDR_WRITE(vdev, 0x00410);
+  //IODATA_WRITE(vdev, 0x0060200a);
+  DEBUG("TDLEN=0x%08x, TDH=0x%08x, TDT=0x%08x, TCTL=0x%08x, TIPG=0x%08x\n",
+        READ(vdev, 0x03808), READ(vdev, 0x03810), READ(vdev, 0x03818),
+        READ(vdev, 0x00400), READ(vdev, 0x00410));
+
+  uint64_t *data = (uint64_t *) malloc(6*sizeof(uint64_t));
+  data[0] = 0xDEADBEEF;
+  data[1] = 0xBEEFDEAD;
+  data[2] = 0xDEADBEEF;
+  data[3] = 0xBEEFDEAD;
+  data[4] = 0xDEADBEEF;
+  data[5] = 0xBEEFDEAD;  
+  ((struct e1000_tx_desc *)tx_buffer)->cmd.dext = 0;
+  ((struct e1000_tx_desc *)tx_buffer)->cmd.vle = 1;
+  ((struct e1000_tx_desc *)tx_buffer)->cmd.eop = 1;
+  ((struct e1000_tx_desc *)tx_buffer)->cmd.ifcs = 1;  
+  ((struct e1000_tx_desc *)tx_buffer)->addr = (uint64_t)&data; //4 bytee value being written to RING BUFFER (tx)
+  ((struct e1000_tx_desc *)tx_buffer)->length = 48;
+ 	WRITE(vdev, TDT, 1); //incrimenting the offset by TDT by 1
+  DEBUG("TDT=%d\n", READ(vdev, TDT));  
+  DEBUG("TDH=%d\n", READ(vdev, 0x3810));
+  DEBUG("e1000 status=0x%x\n", READ(vdev, 0x8));  
+  /*DEBUG("TDLEN=0x%08x, TDH=0x%08x, TDL=0x%08x, TCTL=0x%08x",
+        READ(vdev, 0x03808), READ(vdev, 0x03810), READ(vdev, 0x03818),
+        READ(vdev, 0x00400));*/
+  //IOADDR_WRITE(vdev, 0x00410);
+  //DEBUG("TIPG=0x%08x\n", IODATA_READ(vdev));
+  //IOADDR_WRITE(vdev, 0x00400);
+  //DEBUG("TCTL=0x%08x\n", IODATA_READ(vdev));
   return 0;
 }
 

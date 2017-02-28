@@ -1,7 +1,8 @@
 #include <nautilus/nautilus.h>
+#include <nautilus/netdev.h>
+#include <nautilus/cpu.h> // warrior
 #include <dev/pci.h>
 #include <dev/e1000_pci.h>
-#include <nautilus/cpu.h> // warrior
 
 #ifndef NAUT_CONFIG_DEBUG_E1000_PCI
 #undef DEBUG_PRINT
@@ -38,6 +39,40 @@ static struct e1000_tx_desc tx_desc[4];
 // transmitting buffer
 static void *tx_buffer;
 static struct e1000_dev *vdev;
+
+/*
+static struct nk_net_dev_int {
+    get_characteristic = e1000_get_charactestic,
+    post_receive = e1000_post_receive,
+    post_send = e1000_post_send,
+	} e1000_inter;
+*/
+
+uint8_t packet[1000] = {
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+
+    0x01,
+    0x02,
+    0x03,
+    0x04,
+    0x05,
+    0x06,
+
+    0x80,
+    0x00,
+    
+    0xde,
+    0xad,
+    0xbe,
+    0xef,
+};
+
+
 
 int e1000_pci_init(struct naut_info * naut)
 {
@@ -148,6 +183,30 @@ int e1000_pci_init(struct naut_info * naut)
              vdev->pci_intr, vdev->intr_vec,
              vdev->ioport_start, vdev->ioport_end,
              vdev->mem_start, vdev->mem_end);
+        DEBUG("total pkt tx=%d\n", READ(vdev, 0x40D4));
+        DEBUG("total pkt rx=%d\n", READ(vdev, 0x40D0));
+        /*
+          nk_net_dev_register("e1000-1",
+			    0,
+			    &e1000_inter, 
+			    state); // the e1000 structure
+        */
+
+        uint16_t old_cmd = pci_cfg_readw(bus->num,pdev->num,0,0x4);
+	
+        DEBUG("Old PCI CMD: %x\n",old_cmd);
+
+        old_cmd |= 0x7;  // make sure bus master is enabled
+        old_cmd &= ~0x40;
+
+        DEBUG("New PCI CMD: %x\n",old_cmd);
+
+        pci_cfg_writew(bus->num,pdev->num,0,0x4,old_cmd);
+
+        uint16_t stat = pci_cfg_readw(bus->num,pdev->num,0,0x6);
+
+        DEBUG("PCI STATUS: %x\n",stat);
+
         // read the status register at void ptr + offset
         // uint32_t status=*(volatile uint32_t *)(vdev->mem_start+0x8);
         uint32_t status=READ(vdev, 0x8);
@@ -170,6 +229,8 @@ int e1000_pci_init(struct naut_info * naut)
     ERROR("Cannot allocate tx buffer\n");
     return -1;
   }
+
+  DEBUG("TX BUFFER AT %p\n",tx_buffer); // we need this to be < 4GB
 
   // store the address of the memory in TDBAL/TDBAH
   WRITE(vdev, 0x03800, (uint32_t)(0x00000000ffffffff & (uint64_t) tx_buffer));
@@ -200,16 +261,36 @@ int e1000_pci_init(struct naut_info * naut)
   data[3] = 0xBEEFDEAD;
   data[4] = 0xDEADBEEF;
   data[5] = 0xBEEFDEAD;  
+  struct e1000_tx_desc *d  = (struct e1000_tx_desc *)tx_buffer;
+
+  memset(d,0,sizeof(struct e1000_tx_desc));
+
+  /*
+  d->cmd.dext = 0;
+  ... 
+  */
+
   ((struct e1000_tx_desc *)tx_buffer)->cmd.dext = 0;
-  ((struct e1000_tx_desc *)tx_buffer)->cmd.vle = 1;
+  ((struct e1000_tx_desc *)tx_buffer)->cmd.vle = 0;
   ((struct e1000_tx_desc *)tx_buffer)->cmd.eop = 1;
   ((struct e1000_tx_desc *)tx_buffer)->cmd.ifcs = 1;  
-  ((struct e1000_tx_desc *)tx_buffer)->addr = (uint64_t)&data; //4 bytee value being written to RING BUFFER (tx)
-  ((struct e1000_tx_desc *)tx_buffer)->length = 48;
- 	WRITE(vdev, TDT, 1); //incrimenting the offset by TDT by 1
+  ((struct e1000_tx_desc *)tx_buffer)->cmd.rs = 1;  
+
+  // WRONG
+  //((struct e1000_tx_desc *)tx_buffer)->addr = (uint64_t)&data; //4 bytee value being written to RING BUFFER (tx)
+
+  // is the device little or big endian?  
+  ((struct e1000_tx_desc *)tx_buffer)->addr = (uint64_t) packet;
+
+  ((struct e1000_tx_desc *)tx_buffer)->length = sizeof(packet);
+  
+  DEBUG("Sizeof e1000_tx_desc is %d\n",sizeof(struct e1000_tx_desc));
+
+  WRITE(vdev, TDT, 1); //incrimenting the offset by TDT by 1
   DEBUG("TDT=%d\n", READ(vdev, TDT));  
   DEBUG("TDH=%d\n", READ(vdev, 0x3810));
   DEBUG("e1000 status=0x%x\n", READ(vdev, 0x8));  
+  DEBUG("total pkt tx=%d\n", READ(vdev, 0x40D4));
   /*DEBUG("TDLEN=0x%08x, TDH=0x%08x, TDL=0x%08x, TCTL=0x%08x",
         READ(vdev, 0x03808), READ(vdev, 0x03810), READ(vdev, 0x03818),
         READ(vdev, 0x00400));*/

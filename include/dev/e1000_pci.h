@@ -33,21 +33,23 @@ struct e1000_rx_desc {
 struct e1000_tx_desc {
   volatile uint64_t addr;
   volatile uint16_t length;
-  volatile uint8_t cso;
+  volatile uint8_t  cso;
   // volatile uint8_t cmd;
   volatile struct {
-    uint_t eop : 1;
-    uint_t ifcs: 1;
-    uint_t ic  : 1;
-    uint_t rs  : 1;
-    uint_t dext: 1;
-    uint_t vle : 1;
-    uint_t ide : 1;
+    uint8_t eop : 1;   //comment me
+    uint8_t ifcs: 1;
+    uint8_t ic  : 1;
+    uint8_t rs  : 1;
+    uint8_t rsvd: 1;
+    uint8_t dext: 1;
+    uint8_t vle : 1;
+    uint8_t ide : 1;
   } cmd;
-  volatile uint8_t status;
+  volatile uint8_t status:4;
+  volatile uint8_t rsvd2:4;
   volatile uint8_t css;
   volatile uint16_t special;
-} __attribute__((packed));
+} __attribute__((packed)); 
 
 // function declaration
 int e1000_pci_init(struct naut_info * naut);

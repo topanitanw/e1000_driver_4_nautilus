@@ -37,6 +37,7 @@ static struct e1000_rx_desc rx_desc[4];
 static struct e1000_tx_desc tx_desc[4];
 // transmitting buffer
 static void *td_buffer;
+static void *rd_buffer;
 static struct e1000_dev *vdev;
 
 /*
@@ -46,7 +47,7 @@ static struct nk_net_dev_int {
     post_send = e1000_post_send,
 	} e1000_inter;
 */
-
+// warrior -> delete this
 uint8_t my_packet[1000] = {
     0xff,
     0xff,
@@ -70,6 +71,68 @@ uint8_t my_packet[1000] = {
     0xbe,
     0xef,
 };
+
+static int e1000_init_receive_ring()
+{
+  // allocate transmit descriptor list ring buffer for 64kB.
+  // td_buffer = memalign(16, 64*1024);
+  // FIXME 16byte aligned 64kB, min = 128b
+  rd_buffer = malloc(64*1024);
+  if (!rd_buffer) {
+    ERROR("Cannot allocate tx buffer\n");
+    return -1;
+  }
+
+  DEBUG("RX BUFFER AT %p\n",rd_buffer); // we need this to be < 4GB
+
+  // store the address of the memory in TDBAL/TDBAH 
+  WRITE(vdev, RDBAL_OFFSET, (uint32_t)(0x00000000ffffffff & (uint64_t) rd_buffer));
+  WRITE(vdev, RDBAH_OFFSET, (uint32_t)((0xffffffff00000000 & (uint64_t) rd_buffer) >> 32));
+  DEBUG("rd_buffer=0x%016lx, RDBAL=0x%08x, RDBAH=0x%08x\n",
+        rd_buffer, READ(vdev, RDBAL_OFFSET), READ(vdev, RDBAH_OFFSET));
+  // write rdlen
+  WRITE(vdev, RDLEN_OFFSET, 64*1024);
+  // write the rdh, rdt with 0
+  WRITE(vdev, RDT_OFFSET, 0);
+  WRITE(vdev, RDH_OFFSET, 0);
+  // write rctl register
+  WRITE(vdev, RCTL_OFFSET, 0x4010a);
+  DEBUG("RDLEN=0x%08x, RDH=0x%08x, RDT=0x%08x, RCTL=0x%08x",
+        READ(vdev, RDLEN_OFFSET), READ(vdev, RDH_OFFSET), READ(vdev, RDT_OFFSET),
+        READ(vdev, RCTL_OFFSET));
+}
+
+static int e1000_init_transmit_ring()
+{
+  // allocate transmit descriptor list ring buffer for 64kB.
+  // td_buffer = memalign(16, 64*1024);
+  // FIXME 16byte aligned 64kB, min = 128b
+  td_buffer = malloc(64*1024);
+  if (!td_buffer) {
+    ERROR("Cannot allocate tx buffer\n");
+    return -1;
+  }
+
+  DEBUG("TX BUFFER AT %p\n",td_buffer); // we need this to be < 4GB
+
+  // store the address of the memory in TDBAL/TDBAH 
+  WRITE(vdev, TDBAL_OFFSET, (uint32_t)(0x00000000ffffffff & (uint64_t) td_buffer));
+  WRITE(vdev, TDBAH_OFFSET, (uint32_t)((0xffffffff00000000 & (uint64_t) td_buffer) >> 32));
+  DEBUG("td_buffer=0x%016lx, TDBAL=0x%08x, TDBAH=0x%08x\n",
+        td_buffer, READ(vdev, TDBAL_OFFSET), READ(vdev, TDBAH_OFFSET));
+  // write tdlen
+  WRITE(vdev, TDLEN_OFFSET, 64*1024);
+  // write the tdh, tdt with 0
+  WRITE(vdev, TDT_OFFSET, 0);
+  WRITE(vdev, TDH_OFFSET, 0);
+  // write tctl register
+  WRITE(vdev, TCTL_OFFSET, 0x4010a);
+  // write tipg regsiter     00,00 0000 0110,0000 0010 00,00 0000 1010
+  WRITE(vdev, TIPG_OFFSET, 0x0060200a); // will be zero when emulating hardware
+  DEBUG("TDLEN=0x%08x, TDH=0x%08x, TDT=0x%08x, TCTL=0x%08x, TIPG=0x%08x\n",
+        READ(vdev, TDLEN_OFFSET), READ(vdev, TDH_OFFSET), READ(vdev, TDT_OFFSET),
+        READ(vdev, TCTL_OFFSET), READ(vdev, TIPG_OFFSET));
+}
 
 static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
   uint64_t tdt = READ(vdev, TDT_OFFSET); // get current tail
@@ -248,34 +311,8 @@ int e1000_pci_init(struct naut_info * naut)
     }
   }
 
-  // allocate transmitting buffer for 64kB.
-  // td_buffer = memalign(16, 64*1024);
-  // FIXME 16byte aligned 64kB, min = 128b
-  td_buffer = malloc(64*1024);
-  if (!td_buffer) {
-    ERROR("Cannot allocate tx buffer\n");
-    return -1;
-  }
-
-  DEBUG("TX BUFFER AT %p\n",td_buffer); // we need this to be < 4GB
-
-  // store the address of the memory in TDBAL/TDBAH
-  WRITE(vdev, TDBAL_OFFSET, (uint32_t)(0x00000000ffffffff & (uint64_t) td_buffer));
-  WRITE(vdev, TDBAH_OFFSET, (uint32_t)((0xffffffff00000000 & (uint64_t) td_buffer) >> 32));
-  DEBUG("td_buffer=0x%016lx, TDBAL=0x%08x, TDBAH=0x%08x\n",
-        td_buffer, READ(vdev, TDBAL_OFFSET), READ(vdev, TDBAH_OFFSET));
-  // write tdlen
-  WRITE(vdev, TDLEN_OFFSET, 64*1024);
-  // write the tdh, tdt with 0
-  WRITE(vdev, TDT_OFFSET, 0);
-  WRITE(vdev, TDH_OFFSET, 0);
-  // write tctl register
-  WRITE(vdev, TCTL_OFFSET, 0x4010a);
-  // write tipg regsiter     00,00 0000 0110,0000 0010 00,00 0000 1010
-  WRITE(vdev, TIPG_OFFSET, 0x0060200a); // will be zero when emulating hardware
-  DEBUG("TDLEN=0x%08x, TDH=0x%08x, TDT=0x%08x, TCTL=0x%08x, TIPG=0x%08x\n",
-        READ(vdev, TDLEN_OFFSET), READ(vdev, TDH_OFFSET), READ(vdev, TDT_OFFSET),
-        READ(vdev, TCTL_OFFSET), READ(vdev, TIPG_OFFSET));
+  e1000_init_transmit_ring();
+  e1000_init_receive_ring();
 
   // ***************** INIT IS COMPLETE ************************* //
   

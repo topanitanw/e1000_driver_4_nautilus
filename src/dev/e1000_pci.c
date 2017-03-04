@@ -16,18 +16,6 @@
 #define WRITE(d, o, v) ((*((volatile uint32_t*)(((d)->mem_start)+(o))))=(v))
 #define READL(d, o) (*((volatile uint64_t*)(((d)->mem_start)+(o))))
 #define WRITEL(d, o, v) ((*((volatile uint64_t*)(((d)->mem_start)+(o))))=(v))
-/*
-#define IO_READ(d, o) inl((volatile uint32_t*)(((d)->ioport_start)+(o)))
-#define IO_WRITE(d, o, v) outl((v),(volatile uint32_t*)(((d)->ioport_start)+(o)))
-#define IODATA_READ(d) (IO_READ((d), 0x4))
-#define IODATA_WRITE(d, v) (IO_WRITE((d), 0x4, (v)))
-#define IOADDR_WRITE(d, v) (IO_WRITE((d), 0x0, (v)))*/
-// warrior -> try this way later V
-#define IO_READ(d, o) (*((volatile uint32_t*)(((d)->ioport_start)+(o))))
-#define IO_WRITE(d, o, v) ((*((volatile uint32_t*)(((d)->ioport_start)+(o))))=(v))
-#define IODATA_READ(d) (IO_READ((d), (volatile uint32_t*)0x4))
-#define IODATA_WRITE(d, v) (IO_WRITE((d), (volatile uint32_t*)0x4, (v)))
-#define IOADDR_WRITE(d, v) (IO_WRITE((d), (volatile uint32_t*)0x0, (v)))
 
 // linked list of e1000 devices
 // static global var to this only file
@@ -96,7 +84,7 @@ static int e1000_init_receive_ring()
   WRITE(vdev, RDT_OFFSET, 0);
   WRITE(vdev, RDH_OFFSET, 0);
   // write rctl register
-  WRITE(vdev, RCTL_OFFSET, 0x4010a);
+  WRITE(vdev, RCTL_OFFSET, 0x0082832a);
   DEBUG("RDLEN=0x%08x, RDH=0x%08x, RDT=0x%08x, RCTL=0x%08x",
         READ(vdev, RDLEN_OFFSET), READ(vdev, RDH_OFFSET), READ(vdev, RDT_OFFSET),
         READ(vdev, RCTL_OFFSET));

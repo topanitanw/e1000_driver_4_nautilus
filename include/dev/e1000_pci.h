@@ -4,6 +4,15 @@
 // REGISTER OFFSETS ************************************
 #define RAL_OFFSET      0x5400 // receive address (64b)
 #define RAH_OFFSET      0x5404 //  
+
+#define RDBAL_OFFSET    0x2800 // receive descriptor list address (64b)
+#define RDBAH_OFFSET    0x2804
+#define RDLEN_OFFSET    0x2808 // receive descriptor list length
+#define RDH_OFFSET      0x2810 // receive descriptor head
+#define RDT_OFFSET      0x2818 // receive descriptor tail
+#define RCTL_OFFSET     0x0100 // receive control
+#define RDTR_OFFSET     0x2820 // receive delay timer
+
 #define TPT_OFFSET      0x40D4 // total package transmit
 #define TPR_OFFSET      0x40D0 // total packagte receive
 #define TDBAL_OFFSET    0x3800 // transmit descriptor list address (64b)
@@ -11,9 +20,8 @@
 #define TDLEN_OFFSET    0x3808 // transmit descriptor list length
 #define TDH_OFFSET      0x3810 // transmit descriptor head
 #define TDT_OFFSET      0x3818 // transmit descriptor tail
-#define TCTL_OFFSET     0x0400 // 
-#define TIPG_OFFSET     0x0410 // 
-#define TIPG_OFFSET     0x0410 // 
+#define TCTL_OFFSET     0x0400 // transmit control
+#define TIPG_OFFSET     0x0410 // transmit interpacket gap
 
 // PCI CONFIG SPACE ************************************
 #define VENDOR_ID 0x8086
@@ -42,7 +50,16 @@ struct e1000_rx_desc {
   volatile uint64_t addr;
   volatile uint16_t length;
   volatile uint16_t checksum;
-  volatile uint8_t status;
+  volatile struct {
+      uint8_t dd    : 1;
+      uint8_t eop   : 1;
+      uint8_t ixsm  : 1;
+      uint8_t vp    : 1;
+      uint8_t rsv   : 1;
+      uint8_t tcpcs : 1;
+      uint8_t ipcs  : 1;
+      uint8_t pif   : 1;
+  } status;
   volatile uint8_t errors;
   volatile uint16_t special;
 } __attribute__((packed));
@@ -52,9 +69,8 @@ struct e1000_tx_desc {
   volatile uint64_t addr;
   volatile uint16_t length;
   volatile uint8_t  cso;
-  // volatile uint8_t cmd;
   volatile struct {
-    uint8_t eop : 1;   //comment me
+    uint8_t eop : 1;
     uint8_t ifcs: 1;
     uint8_t ic  : 1;
     uint8_t rs  : 1;

@@ -26,6 +26,10 @@ static struct e1000_tx_desc tx_desc[4];
 // transmitting buffer
 static void *td_buffer;
 static void *rd_buffer;
+static void *rcv_buffer;
+static int rcv_desc_count;
+static int rcv_block_size;
+static int rd_buff_size;
 static struct e1000_dev *vdev;
 
 /*
@@ -65,11 +69,31 @@ static int e1000_init_receive_ring()
   // allocate transmit descriptor list ring buffer for 64kB.
   // td_buffer = memalign(16, 64*1024);
   // FIXME 16byte aligned 64kB, min = 128b
-  rd_buffer = malloc(64*1024);
+  rcv_block_size = 256; // bytes
+  rd_buff_size = 1024;
+  rcv_desc_count = rd_buff_size / sizeof(struct e1000_rx_desc);
+  rcv_buffer = malloc(rcv_block_size * rcv_desc_count);
+  if (!rcv_buffer) {
+    ERROR("Cannot allocate tx buffer\n");
+    return -1;
+  }
+  memset(rcv_buffer, 0, rcv_block_size * rcv_desc_count);
+
+  rd_buffer = malloc(rd_buff_size);
   if (!rd_buffer) {
     ERROR("Cannot allocate tx buffer\n");
     return -1;
   }
+  memset(rd_buffer, 0, rd_buff_size);
+ 
+  // initialize descriptors pointing to where dev can write rcv'd packets
+  for(int i=0; i<rcv_desc_count; i++)
+  {
+      struct e1000_rx_desc tmp_rxd;
+      tmp_rxd.addr = (uint64_t)((uint8_t*)rcv_buffer + rcv_block_size*i);
+      ((struct e1000_rx_desc *)rd_buffer)[i] = tmp_rxd;
+  }
+
 
   DEBUG("RX BUFFER AT %p\n",rd_buffer); // we need this to be < 4GB
 
@@ -79,15 +103,16 @@ static int e1000_init_receive_ring()
   DEBUG("rd_buffer=0x%016lx, RDBAL=0x%08x, RDBAH=0x%08x\n",
         rd_buffer, READ(vdev, RDBAL_OFFSET), READ(vdev, RDBAH_OFFSET));
   // write rdlen
-  WRITE(vdev, RDLEN_OFFSET, 64*1024);
+  WRITE(vdev, RDLEN_OFFSET, rd_buff_size);
   // write the rdh, rdt with 0
-  WRITE(vdev, RDT_OFFSET, 0);
   WRITE(vdev, RDH_OFFSET, 0);
+  WRITE(vdev, RDT_OFFSET, 0);
   // write rctl register
-  WRITE(vdev, RCTL_OFFSET, 0x0082832a);
+  WRITE(vdev, RCTL_OFFSET, 0x0083832e);
   DEBUG("RDLEN=0x%08x, RDH=0x%08x, RDT=0x%08x, RCTL=0x%08x",
         READ(vdev, RDLEN_OFFSET), READ(vdev, RDH_OFFSET), READ(vdev, RDT_OFFSET),
         READ(vdev, RCTL_OFFSET));
+  return 0;
 }
 
 static int e1000_init_transmit_ring()
@@ -120,6 +145,7 @@ static int e1000_init_transmit_ring()
   DEBUG("TDLEN=0x%08x, TDH=0x%08x, TDT=0x%08x, TCTL=0x%08x, TIPG=0x%08x\n",
         READ(vdev, TDLEN_OFFSET), READ(vdev, TDH_OFFSET), READ(vdev, TDT_OFFSET),
         READ(vdev, TCTL_OFFSET), READ(vdev, TIPG_OFFSET));
+  return 0;
 }
 
 static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
@@ -138,7 +164,7 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
   d->cmd.eop = 1;
   d->cmd.ifcs = 1;  
   d->cmd.rs = 1;  
-  d->addr = packet_addr;
+  d->addr = (uint64_t)packet_addr;
   d->length = packet_size;
   
   DEBUG("Sizeof e1000_tx_desc is %d\n",sizeof(struct e1000_tx_desc));
@@ -308,6 +334,34 @@ int e1000_pci_init(struct naut_info * naut)
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
   DEBUG("total pkt tx=%d\n", READ(vdev, TPT_OFFSET));
   DEBUG("total pkt tx=%d\n", READ(vdev, TPT_OFFSET));
+  int sleepcount = 0;
+  uint32_t headpos;
+  uint32_t tailpos;
+  uint32_t rstatus = 0;
+  while(1)
+  {
+      if(sleepcount == 0) {
+          headpos = READ(vdev, RDH_OFFSET);
+          tailpos = READ(vdev, RDT_OFFSET);
+          if (headpos == tailpos)
+          {
+              WRITE(vdev, RDT_OFFSET, (tailpos+1)%rcv_desc_count);
+          }
+
+          for(int i =0; i<rcv_desc_count; i++)
+          {
+              DEBUG("status of rd %d: %d\n", i, ((struct e1000_rx_desc*)rd_buffer)[i].status);
+              if((uint8_t)(((struct e1000_rx_desc*)rd_buffer)[i].status) > 0)
+              {
+                    DEBUG("value is: %d\n", *(uint64_t*)((uint8_t*)rcv_buffer+rcv_block_size*i));
+              }
+          }
+      }else if(sleepcount > 99999999999999999999){
+          sleepcount = -1;
+      }
+      sleepcount++;
+  }
+
   return 0;
 }
 

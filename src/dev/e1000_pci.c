@@ -351,9 +351,24 @@ int e1000_pci_init(struct naut_info * naut)
           for(int i =0; i<rcv_desc_count; i++)
           {
               DEBUG("status of rd %d: %d\n", i, ((struct e1000_rx_desc*)rd_buffer)[i].status);
-              if((uint8_t)(((struct e1000_rx_desc*)rd_buffer)[i].status) > 0)
+              if(((struct e1000_rx_desc*)rd_buffer)[i].status.dd & 1)
               {
-                    DEBUG("value is: %d\n", *(uint64_t*)((uint8_t*)rcv_buffer+rcv_block_size*i));
+                    DEBUG("value is: %d, length is: %d\n", 
+                            *(uint64_t*)((uint8_t*)rcv_buffer+rcv_block_size*i),
+                            ((struct e1000_rx_desc*)rd_buffer)[i].length);
+                    for(int j=0; j<((struct e1000_rx_desc*)rd_buffer)[i].length / 8; j++)
+                    {
+                        if(j%8 == 0)
+                        {
+                            DEBUG("\n");
+                        }
+                        DEBUG("%02x ", *(uint8_t*)((uint8_t*)rcv_buffer+rcv_block_size*i + j));
+                        if(j%2 == 1)
+                        {
+                            DEBUG(" ");
+                        }
+
+                    }
               }
           }
       }else if(sleepcount > 99999999999999999999){

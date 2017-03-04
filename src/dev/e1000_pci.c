@@ -28,7 +28,6 @@
 #define IODATA_READ(d) (IO_READ((d), (volatile uint32_t*)0x4))
 #define IODATA_WRITE(d, v) (IO_WRITE((d), (volatile uint32_t*)0x4, (v)))
 #define IOADDR_WRITE(d, v) (IO_WRITE((d), (volatile uint32_t*)0x0, (v)))
-#define TDT 0x3818
 
 // linked list of e1000 devices
 // static global var to this only file
@@ -37,7 +36,7 @@ static struct list_head dev_list;
 static struct e1000_rx_desc rx_desc[4];
 static struct e1000_tx_desc tx_desc[4];
 // transmitting buffer
-static void *tx_buffer;
+static void *td_buffer;
 static struct e1000_dev *vdev;
 
 /*
@@ -48,7 +47,7 @@ static struct nk_net_dev_int {
 	} e1000_inter;
 */
 
-uint8_t packet[1000] = {
+uint8_t my_packet[1000] = {
     0xff,
     0xff,
     0xff,
@@ -71,6 +70,34 @@ uint8_t packet[1000] = {
     0xbe,
     0xef,
 };
+
+static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
+  uint64_t tdt = READ(vdev, TDT_OFFSET); // get current tail
+  struct e1000_tx_desc *d  = (struct e1000_tx_desc *)((char*)td_buffer + sizeof(struct e1000_tx_desc) * tdt);
+
+  memset(d,0,sizeof(struct e1000_tx_desc));
+
+  DEBUG("td buffer=%d\n", td_buffer); 
+  DEBUG("sizeof descriptor=%d\n", sizeof(struct e1000_tx_desc)); 
+  DEBUG("descriptor addr=%d\n", d); 
+  DEBUG("TDT=%d\n", tdt);  
+
+  d->cmd.dext = 0;
+  d->cmd.vle = 0;
+  d->cmd.eop = 1;
+  d->cmd.ifcs = 1;  
+  d->cmd.rs = 1;  
+  d->addr = packet_addr;
+  d->length = packet_size;
+  
+  DEBUG("Sizeof e1000_tx_desc is %d\n",sizeof(struct e1000_tx_desc));
+
+  WRITE(vdev, TDT_OFFSET, tdt+1); //increment transmit descriptor list tail by 1
+  DEBUG("TDT=%d\n", READ(vdev, TDT_OFFSET));  
+  DEBUG("TDH=%d\n", READ(vdev, TDH_OFFSET));
+  DEBUG("e1000 status=0x%x\n", READ(vdev, 0x8));  
+  return 0;
+}
 
 
 
@@ -101,7 +128,7 @@ int e1000_pci_init(struct naut_info * naut)
 
       DEBUG("Device %u is a %x:%x\n", pdev->num, cfg->vendor_id, cfg->device_id);
       // intel vendor id and e1000 device id
-      if (cfg->vendor_id==0x8086 && cfg->device_id==0x100E) {
+      if (cfg->vendor_id==VENDOR_ID && cfg->device_id==DEVICE_ID) {
         DEBUG("E1000 Device Found\n");
         // struct e1000_dev *vdev;
   
@@ -183,8 +210,8 @@ int e1000_pci_init(struct naut_info * naut)
              vdev->pci_intr, vdev->intr_vec,
              vdev->ioport_start, vdev->ioport_end,
              vdev->mem_start, vdev->mem_end);
-        DEBUG("total pkt tx=%d\n", READ(vdev, 0x40D4));
-        DEBUG("total pkt rx=%d\n", READ(vdev, 0x40D0));
+        DEBUG("total pkt tx=%d\n", READ(vdev, TPT_OFFSET));
+        DEBUG("total pkt rx=%d\n", READ(vdev, TPR_OFFSET));
         /*
           nk_net_dev_register("e1000-1",
 			    0,
@@ -211,8 +238,8 @@ int e1000_pci_init(struct naut_info * naut)
         // uint32_t status=*(volatile uint32_t *)(vdev->mem_start+0x8);
         uint32_t status=READ(vdev, 0x8);
         DEBUG("e1000 status=0x%x\n", status);
-        uint32_t mac_low=READ(vdev, 0x5400);
-        uint32_t mac_high=READ(vdev, 0x5404);        
+        uint32_t mac_low=READ(vdev, RAL_OFFSET);
+        uint32_t mac_high=READ(vdev, RAH_OFFSET);        
         uint64_t macall=((uint64_t)mac_low+((uint64_t)mac_high<<32))&(0xffffffffffffffff >> 12);
         DEBUG("e1000 mac=0x%lX\n", macall);        
         DEBUG("e1000 low_mac=0x%X\n", mac_low);        
@@ -222,82 +249,40 @@ int e1000_pci_init(struct naut_info * naut)
   }
 
   // allocate transmitting buffer for 64kB.
-  // tx_buffer = memalign(16, 64*1024);
+  // td_buffer = memalign(16, 64*1024);
   // FIXME 16byte aligned 64kB, min = 128b
-  tx_buffer = malloc(64*1024);
-  if (!tx_buffer) {
+  td_buffer = malloc(64*1024);
+  if (!td_buffer) {
     ERROR("Cannot allocate tx buffer\n");
     return -1;
   }
 
-  DEBUG("TX BUFFER AT %p\n",tx_buffer); // we need this to be < 4GB
+  DEBUG("TX BUFFER AT %p\n",td_buffer); // we need this to be < 4GB
 
   // store the address of the memory in TDBAL/TDBAH
-  WRITE(vdev, 0x03800, (uint32_t)(0x00000000ffffffff & (uint64_t) tx_buffer));
-  WRITE(vdev, 0x03804, (uint32_t)((0xffffffff00000000 & (uint64_t) tx_buffer) >> 32));
-  DEBUG("tx_buffer=0x%016lx, TDBAL=0x%08x, TDBAH=0x%08x\n",
-        tx_buffer, READ(vdev, 0x03800), READ(vdev, 0x03804));
+  WRITE(vdev, TDBAL_OFFSET, (uint32_t)(0x00000000ffffffff & (uint64_t) td_buffer));
+  WRITE(vdev, TDBAH_OFFSET, (uint32_t)((0xffffffff00000000 & (uint64_t) td_buffer) >> 32));
+  DEBUG("td_buffer=0x%016lx, TDBAL=0x%08x, TDBAH=0x%08x\n",
+        td_buffer, READ(vdev, TDBAL_OFFSET), READ(vdev, TDBAH_OFFSET));
   // write tdlen
-  WRITE(vdev, 0x03808, 64*1024);
+  WRITE(vdev, TDLEN_OFFSET, 64*1024);
   // write the tdh, tdt with 0
-  WRITE(vdev, 0x03810, 0);
-  WRITE(vdev, 0x03818, 0);
+  WRITE(vdev, TDT_OFFSET, 0);
+  WRITE(vdev, TDH_OFFSET, 0);
   // write tctl register
-  WRITE(vdev, 0x00400, 0x0004010a);
-  //IOADDR_WRITE(vdev, 0x00400);
-  //IODATA_WRITE(vdev, 0x0004010a);
+  WRITE(vdev, TCTL_OFFSET, 0x4010a);
   // write tipg regsiter     00,00 0000 0110,0000 0010 00,00 0000 1010
-  WRITE(vdev, 0x00410, 0x0060200a);
-  //IOADDR_WRITE(vdev, 0x00410);
-  //IODATA_WRITE(vdev, 0x0060200a);
+  WRITE(vdev, TIPG_OFFSET, 0x0060200a); // will be zero when emulating hardware
   DEBUG("TDLEN=0x%08x, TDH=0x%08x, TDT=0x%08x, TCTL=0x%08x, TIPG=0x%08x\n",
-        READ(vdev, 0x03808), READ(vdev, 0x03810), READ(vdev, 0x03818),
-        READ(vdev, 0x00400), READ(vdev, 0x00410));
+        READ(vdev, TDLEN_OFFSET), READ(vdev, TDH_OFFSET), READ(vdev, TDT_OFFSET),
+        READ(vdev, TCTL_OFFSET), READ(vdev, TIPG_OFFSET));
 
-  uint64_t *data = (uint64_t *) malloc(6*sizeof(uint64_t));
-  data[0] = 0xDEADBEEF;
-  data[1] = 0xBEEFDEAD;
-  data[2] = 0xDEADBEEF;
-  data[3] = 0xBEEFDEAD;
-  data[4] = 0xDEADBEEF;
-  data[5] = 0xBEEFDEAD;  
-  struct e1000_tx_desc *d  = (struct e1000_tx_desc *)tx_buffer;
-
-  memset(d,0,sizeof(struct e1000_tx_desc));
-
-  /*
-  d->cmd.dext = 0;
-  ... 
-  */
-
-  ((struct e1000_tx_desc *)tx_buffer)->cmd.dext = 0;
-  ((struct e1000_tx_desc *)tx_buffer)->cmd.vle = 0;
-  ((struct e1000_tx_desc *)tx_buffer)->cmd.eop = 1;
-  ((struct e1000_tx_desc *)tx_buffer)->cmd.ifcs = 1;  
-  ((struct e1000_tx_desc *)tx_buffer)->cmd.rs = 1;  
-
-  // WRONG
-  //((struct e1000_tx_desc *)tx_buffer)->addr = (uint64_t)&data; //4 bytee value being written to RING BUFFER (tx)
-
-  // is the device little or big endian?  
-  ((struct e1000_tx_desc *)tx_buffer)->addr = (uint64_t) packet;
-
-  ((struct e1000_tx_desc *)tx_buffer)->length = sizeof(packet);
+  // ***************** INIT IS COMPLETE ************************* //
   
-  DEBUG("Sizeof e1000_tx_desc is %d\n",sizeof(struct e1000_tx_desc));
-
-  WRITE(vdev, TDT, 1); //incrimenting the offset by TDT by 1
-  DEBUG("TDT=%d\n", READ(vdev, TDT));  
-  DEBUG("TDH=%d\n", READ(vdev, 0x3810));
-  DEBUG("e1000 status=0x%x\n", READ(vdev, 0x8));  
-  DEBUG("total pkt tx=%d\n", READ(vdev, 0x40D4));
-  /*DEBUG("TDLEN=0x%08x, TDH=0x%08x, TDL=0x%08x, TCTL=0x%08x",
-        READ(vdev, 0x03808), READ(vdev, 0x03810), READ(vdev, 0x03818),
-        READ(vdev, 0x00400));*/
-  //IOADDR_WRITE(vdev, 0x00410);
-  //DEBUG("TIPG=0x%08x\n", IODATA_READ(vdev));
-  //IOADDR_WRITE(vdev, 0x00400);
-  //DEBUG("TCTL=0x%08x\n", IODATA_READ(vdev));
+  e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
+  e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
+  DEBUG("total pkt tx=%d\n", READ(vdev, TPT_OFFSET));
+  DEBUG("total pkt tx=%d\n", READ(vdev, TPT_OFFSET));
   return 0;
 }
 
@@ -306,3 +291,4 @@ int e1000_pci_deinit()
   INFO("deinited\n");
   return 0;
 }
+

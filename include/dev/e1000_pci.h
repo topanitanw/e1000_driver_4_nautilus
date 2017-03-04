@@ -1,6 +1,24 @@
 #ifndef __E1000_PCI
 #define __E1000_PCI
 
+// REGISTER OFFSETS ************************************
+#define RAL_OFFSET      0x5400 // receive address (64b)
+#define RAH_OFFSET      0x5404 //  
+#define TPT_OFFSET      0x40D4 // total package transmit
+#define TPR_OFFSET      0x40D0 // total packagte receive
+#define TDBAL_OFFSET    0x3800 // transmit descriptor list address (64b)
+#define TDBAH_OFFSET    0x3804 
+#define TDLEN_OFFSET    0x3808 // transmit descriptor list length
+#define TDH_OFFSET      0x3810 // transmit descriptor head
+#define TDT_OFFSET      0x3818 // transmit descriptor tail
+#define TCTL_OFFSET     0x0400 // 
+#define TIPG_OFFSET     0x0410 // 
+#define TIPG_OFFSET     0x0410 // 
+
+// PCI CONFIG SPACE ************************************
+#define VENDOR_ID 0x8086
+#define DEVICE_ID 0x100E
+
 // new type declaration
 struct e1000_dev {
   // for our linked list of virtio devices

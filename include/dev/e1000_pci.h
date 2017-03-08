@@ -27,6 +27,39 @@
 #define VENDOR_ID 0x8086
 #define DEVICE_ID 0x100E
 
+// E1000 Receive Register *******************************
+#define RCTL_EN                         (1 << 1)    // Receiver Enable
+#define RCTL_SBP                        (1 << 2)    // Store Bad Packets
+#define RCTL_UPE                        (1 << 3)    // Unicast Promiscuous Enabled
+#define RCTL_MPE                        (1 << 4)    // Multicast Promiscuous Enabled
+#define RCTL_LPE                        (1 << 5)    // Long Packet Reception Enable
+#define RCTL_LBM_NONE                   (0 << 6)    // No Loopback
+#define RCTL_LBM_PHY                    (3 << 6)    // PHY or external SerDesc loopback
+#define RTCL_RDMTS_HALF                 (0 << 8)    // Free Buffer Threshold is 1/2 of RDLEN
+#define RTCL_RDMTS_QUARTER              (1 << 8)    // Free Buffer Threshold is 1/4 of RDLEN
+#define RTCL_RDMTS_EIGHTH               (2 << 8)    // Free Buffer Threshold is 1/8 of RDLEN
+#define RCTL_MO_36                      (0 << 12)   // Multicast Offset - bits 47:36
+#define RCTL_MO_35                      (1 << 12)   // Multicast Offset - bits 46:35
+#define RCTL_MO_34                      (2 << 12)   // Multicast Offset - bits 45:34
+#define RCTL_MO_32                      (3 << 12)   // Multicast Offset - bits 43:32
+#define RCTL_BAM                        (1 << 15)   // Broadcast Accept Mode
+#define RCTL_VFE                        (1 << 18)   // VLAN Filter Enable
+#define RCTL_CFIEN                      (1 << 19)   // Canonical Form Indicator Enable
+#define RCTL_CFI                        (1 << 20)   // Canonical Form Indicator Bit Value
+#define RCTL_DPF                        (1 << 22)   // Discard Pause Frames
+#define RCTL_PMCF                       (1 << 23)   // Pass MAC Control Frames
+#define RCTL_SECRC                      (1 << 26)   // Strip Ethernet CRC
+ 
+// Buffer Sizes
+#define RCTL_BSIZE_256                  (3 << 16)
+#define RCTL_BSIZE_512                  (2 << 16)
+#define RCTL_BSIZE_1024                 (1 << 16)
+#define RCTL_BSIZE_2048                 (0 << 16)
+#define RCTL_BSIZE_4096                 ((3 << 16) | (1 << 25))
+#define RCTL_BSIZE_8192                 ((2 << 16) | (1 << 25))
+#define RCTL_BSIZE_16384                ((1 << 16) | (1 << 25))
+ 
+
 // new type declaration
 struct e1000_dev {
   // for our linked list of virtio devices

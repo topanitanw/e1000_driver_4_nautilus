@@ -32,55 +32,38 @@ static int rcv_block_size;
 static int rd_buff_size;
 static struct e1000_dev *vdev;
 
+
 /*
-static struct nk_net_dev_int {
-    get_characteristic = e1000_get_charactestic,
-    post_receive = e1000_post_receive,
-    post_send = e1000_post_send,
-	} e1000_inter;
-*/
-// warrior -> delete this
-uint8_t my_packet[1000] = {
-    0xff,
-    0xff,
-    0xff,
-    0xff,
-    0xff,
-    0xff,
+Description of Receive process
 
-    0x01,
-    0x02,
-    0x03,
-    0x04,
-    0x05,
-    0x06,
+1) recieve descriptor must fit inside of the ring of 1024 (arbritary)
+	however, all of these recieve have headers are headers that point to blocks of memory
+				(where the device is going to automatically store the incoming data from packets)
+				The number of recieve descriptors is set by the size (16 receive descriptors can fit in 1k)
+		The ring is an array of receive descriptors (the address part consumes 8 bytes of each recieve descriptor)
+			(other 8 bytes are about the status and size, etc..., [and device will change this])	
+	The receive buffer is an array of blocks that the recieve descriptors are pointing too
+*/	
 
-    0x80,
-    0x00,
-    
-    0xde,
-    0xad,
-    0xbe,
-    0xef,
-};
 
-static int e1000_init_receive_ring()
+
+static int e1000_init_receive_ring(int blocksize, int blockcount)
 {
-  // allocate transmit descriptor list ring buffer for 64kB.
-  // td_buffer = memalign(16, 64*1024);
-  // FIXME 16byte aligned 64kB, min = 128b
-  // memory block size to store a receive packet
-  rcv_block_size = 256; // bytes
+  //these are memory blocks that will store a packet
+  rcv_block_size = blocksize; //should reflect register value (256)
   // the total size of the receive descriptor ring
-  rd_buff_size = 1024;
+  rd_buff_size = sizeof(struct e1000_rx_desc) * blockcount; //16Bytes *  ...
   // the number of the receive descriptor in the ring
-  rcv_desc_count = rd_buff_size / sizeof(struct e1000_rx_desc);
+  rcv_desc_count = blockcount;
+
   // allocate a large block of memory to store receiving packets
   rcv_buffer = malloc(rcv_block_size * rcv_desc_count);
   if (!rcv_buffer) {
     ERROR("Cannot allocate tx buffer\n");
     return -1;
   }
+
+  //same 
   memset(rcv_buffer, 0, rcv_block_size * rcv_desc_count);
   // allocate the receive descriptor ring buffer
   rd_buffer = malloc(rd_buff_size);

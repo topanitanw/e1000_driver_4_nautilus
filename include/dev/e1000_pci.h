@@ -27,7 +27,9 @@
 #define VENDOR_ID 0x8086
 #define DEVICE_ID 0x100E
 
-// E1000 Receive Register *******************************
+
+// REGISTER BIT MASKS **********************************
+// E1000 Receive Register 
 #define RCTL_EN                         (1 << 1)    // Receiver Enable
 #define RCTL_SBP                        (1 << 2)    // Store Bad Packets
 #define RCTL_UPE                        (1 << 3)    // Unicast Promiscuous Enabled
@@ -58,7 +60,14 @@
 #define RCTL_BSIZE_4096                 ((3 << 16) | (1 << 25))
 #define RCTL_BSIZE_8192                 ((2 << 16) | (1 << 25))
 #define RCTL_BSIZE_16384                ((1 << 16) | (1 << 25))
- 
+
+// VARIABLE CONSTANTS *************************************
+/* these may need to dynamically change for different machines
+   (for example, to allow buffer sizes to reflect mem availabilty)
+*/
+#define RX_DSC_COUNT 128
+#define TX_DSC_COUNT 64 // equal to DMA block count
+#define TX_BLOCKSIZE 256 // bytes available per DMA block
 
 // new type declaration
 struct e1000_dev {

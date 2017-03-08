@@ -69,16 +69,20 @@ static int e1000_init_receive_ring()
   // allocate transmit descriptor list ring buffer for 64kB.
   // td_buffer = memalign(16, 64*1024);
   // FIXME 16byte aligned 64kB, min = 128b
+  // memory block size to store a receive packet
   rcv_block_size = 256; // bytes
+  // the total size of the receive descriptor ring
   rd_buff_size = 1024;
+  // the number of the receive descriptor in the ring
   rcv_desc_count = rd_buff_size / sizeof(struct e1000_rx_desc);
+  // allocate a large block of memory to store receiving packets
   rcv_buffer = malloc(rcv_block_size * rcv_desc_count);
   if (!rcv_buffer) {
     ERROR("Cannot allocate tx buffer\n");
     return -1;
   }
   memset(rcv_buffer, 0, rcv_block_size * rcv_desc_count);
-
+  // allocate the receive descriptor ring buffer
   rd_buffer = malloc(rd_buff_size);
   if (!rd_buffer) {
     ERROR("Cannot allocate tx buffer\n");
@@ -86,14 +90,13 @@ static int e1000_init_receive_ring()
   }
   memset(rd_buffer, 0, rd_buff_size);
  
-  // initialize descriptors pointing to where dev can write rcv'd packets
+  // initialize descriptors pointing to where device can write rcv'd packets
   for(int i=0; i<rcv_desc_count; i++)
   {
-      struct e1000_rx_desc tmp_rxd;
-      tmp_rxd.addr = (uint64_t)((uint8_t*)rcv_buffer + rcv_block_size*i);
-      ((struct e1000_rx_desc *)rd_buffer)[i] = tmp_rxd;
+    struct e1000_rx_desc tmp_rxd;
+    tmp_rxd.addr = (uint64_t)((uint8_t*)rcv_buffer + rcv_block_size*i);
+    ((struct e1000_rx_desc *)rd_buffer)[i] = tmp_rxd;
   }
-
 
   DEBUG("RX BUFFER AT %p\n",rd_buffer); // we need this to be < 4GB
 
@@ -356,22 +359,21 @@ int e1000_pci_init(struct naut_info * naut)
                     DEBUG("value is: %d, length is: %d\n", 
                             *(uint64_t*)((uint8_t*)rcv_buffer+rcv_block_size*i),
                             ((struct e1000_rx_desc*)rd_buffer)[i].length);
-                    for(int j=0; j<((struct e1000_rx_desc*)rd_buffer)[i].length / 8; j++)
+                    for(int j=0; j<((struct e1000_rx_desc*)rd_buffer)[i].length; j++)
                     {
+                        DEBUG("index:%d %02x\n", j, *(uint8_t*)((uint8_t*)rcv_buffer+rcv_block_size*i + j));
                         if(j%8 == 0)
                         {
-                            DEBUG("\n");
-                        }
-                        DEBUG("%02x ", *(uint8_t*)((uint8_t*)rcv_buffer+rcv_block_size*i + j));
-                        if(j%2 == 1)
-                        {
-                            DEBUG(" ");
-                        }
-
+                          DEBUG("byte: %d ----------------------------------------\n", j);
+                        }                        
+                        /* if(j%2 == 1) */
+                        /* { */
+                        /*     DEBUG(" "); */
+                        /* } */
                     }
               }
           }
-      }else if(sleepcount > 99999999999999999999){
+      } else if(sleepcount > 99999999999999999999){
           sleepcount = -1;
       }
       sleepcount++;

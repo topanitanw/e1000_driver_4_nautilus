@@ -25,6 +25,7 @@ static struct e1000_rx_desc rx_desc[4];
 static struct e1000_tx_desc tx_desc[4];
 // transmitting buffer
 static void *td_buffer;
+static int td_buff_size;
 static void *rd_buffer;
 static void *rcv_buffer;
 static int rcv_desc_count;
@@ -46,7 +47,8 @@ Description of Receive process
 */	
 
 
-
+// initialize a ring buffer to hold receive descriptor and 
+// another buffer for DMA space 
 static int e1000_init_receive_ring(int blocksize, int blockcount)
 {
   //these are memory blocks that will store a packet
@@ -101,12 +103,12 @@ static int e1000_init_receive_ring(int blocksize, int blockcount)
   return 0;
 }
 
-static int e1000_init_transmit_ring()
+// initialize ring buffer to hold transmit descriptors 
+static int e1000_init_transmit_ring(int tx_dsc_count)
 {
+  td_buff_size = sizeof(struct e1000_tx_desc)*tx_dsc_count;
   // allocate transmit descriptor list ring buffer for 64kB.
-  // td_buffer = memalign(16, 64*1024);
-  // FIXME 16byte aligned 64kB, min = 128b
-  td_buffer = malloc(64*1024);
+  td_buffer = malloc(td_buff_size);
   if (!td_buffer) {
     ERROR("Cannot allocate tx buffer\n");
     return -1;
@@ -358,9 +360,10 @@ int e1000_pci_init(struct naut_info * naut)
     }
   }
   // need to init each e1000
-  e1000_init_transmit_ring();
-  e1000_init_receive_ring();
+  e1000_init_transmit_ring(RX_DSC_COUNT);
+  e1000_init_receive_ring(TX_BLOCKSIZE, TX_DSC_COUNT);
   return 0; // end of the function here
+
   // ***************** INIT IS COMPLETE ************************* //
   
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));

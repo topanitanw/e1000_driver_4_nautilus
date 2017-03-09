@@ -162,13 +162,53 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
   return 0;
 }
 
+int e1000_get_characteristics(void *state, struct nk_net_dev_characteristics *c) {
+  struct e1000_state *e=(struct e1000_state*)state;
+  // c->mac=macaddress of the device from the state
+  // min_tu the minimum pkt size to tx
+  // c->min_tu =
+  // c->max_tu =
+  return 0; //succeeds
+}
+
+int e1000_interupt_handler() {
+  // 1. figure which e1000 -> this gives the e1000 state
+  // 2. figure why the interrupt error rx tx
+  // 3. assume tx
+  // 4. determine the position of the descriptor that is done
+  // 5. use the data structure in e1000_post_send 3. to map the pos back to callback and context
+  // 6. run callback(context);
+}
+int e1000_post_send(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
+  struct e1000_state *e=(struct e1000_state*)state;
+  // start the tx
+  // check len < max_tu if no, return -1
+  // queue full return -1
+  // as simple as possible
+  // 1. create the descriptor based on src (pkt address), len (length of the pkt)
+  // 2. queue the descriptor in the hw and record the pos of the descriptor of the ring
+  // 3. put the data structure to map the pos in the ring from 2. to callback and context
+  return 0; //succeeds
+}
+int e1000_post_receive(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
+  // start the tx
+  // 1. create the descriptor based on src (pkt address), len (length of the pkt)
+  // 2. queue the descriptor in the hw and record the pos of the descriptor of the ring
+  // 3. put the data structure to map the pos in the ring from 2. to callback and context  
+}
+static struct nk_net_dev_int ops={
+  .get_characteristics=e1000_get_characteristics,
+  .post_receive=e1000_post_receive,
+  .post_send=e1000_post_send,
+};
 
 
 int e1000_pci_init(struct naut_info * naut)
 {
   struct pci_info *pci = naut->sys.pci;
   struct list_head *curbus, *curdev;
-
+  int num = 0;
+  
   INFO("init\n");
   // building the e1000 linked list and register it
   INIT_LIST_HEAD(&dev_list);
@@ -307,13 +347,20 @@ int e1000_pci_init(struct naut_info * naut)
         DEBUG("e1000 mac=0x%lX\n", macall);        
         DEBUG("e1000 low_mac=0x%X\n", mac_low);        
         list_add(&dev_list, &vdev->e1000_node);
+        char name[80];
+        sprintf(name, "e1000-%d",num);
+        num++;
+        vdev->netdev = nk_net_dev_register(name, 0, &ops, vdev);
+        if(!vdev->netdev) {
+          ERROR("Cannot register the device");
+        }
       }      
     }
   }
-
+  // need to init each e1000
   e1000_init_transmit_ring();
   e1000_init_receive_ring();
-
+  return 0; // end of the function here
   // ***************** INIT IS COMPLETE ************************* //
   
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));

@@ -59,9 +59,10 @@
 #define RCTL_BSIZE_8192                 ((2 << 16) | (1 << 25))
 #define RCTL_BSIZE_16384                ((1 << 16) | (1 << 25))
  
-
+  
 // new type declaration
 struct e1000_dev {
+  struct nk_net_dev *netdev;
   // for our linked list of virtio devices
   struct list_head e1000_node;
   // a pointer to the base class

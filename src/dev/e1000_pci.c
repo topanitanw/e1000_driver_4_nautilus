@@ -32,8 +32,10 @@ static int rcv_desc_count;
 static int rcv_block_size;
 static int rd_buff_size;
 static struct e1000_dev *vdev;
+static struct e1000_rx_ring *rx_desc_ring;
 
-
+int my_packet[16] = {0xdeadbeef,0xbeefdead,};
+    
 /*
 Description of Receive process
 
@@ -51,6 +53,13 @@ Description of Receive process
 // another buffer for DMA space 
 static int e1000_init_receive_ring(int blocksize, int blockcount)
 {
+  rx_desc_ring = malloc(sizeof(struct e1000_rx_ring));
+  if (!rx_desc_ring) {
+    ERROR("Cannot allocate rx buffer\n");
+    return -1;
+  }
+  rx_desc_ring->tail_pos = 0;
+  
   //these are memory blocks that will store a packet
   rcv_block_size = blocksize; //should reflect register value (256)
   // the total size of the receive descriptor ring
@@ -68,28 +77,28 @@ static int e1000_init_receive_ring(int blocksize, int blockcount)
   //same 
   memset(rcv_buffer, 0, rcv_block_size * rcv_desc_count);
   // allocate the receive descriptor ring buffer
-  rd_buffer = malloc(rd_buff_size);
-  if (!rd_buffer) {
-    ERROR("Cannot allocate tx buffer\n");
+  rx_desc_ring->ring_buffer = malloc(rd_buff_size);
+  if (!rx_desc_ring->ring_buffer) {
+    ERROR("Cannot allocate rx buffer\n");
     return -1;
   }
-  memset(rd_buffer, 0, rd_buff_size);
+  memset(rx_desc_ring->ring_buffer, 0, rd_buff_size);
  
   // initialize descriptors pointing to where device can write rcv'd packets
   for(int i=0; i<rcv_desc_count; i++)
   {
     struct e1000_rx_desc tmp_rxd;
     tmp_rxd.addr = (uint64_t)((uint8_t*)rcv_buffer + rcv_block_size*i);
-    ((struct e1000_rx_desc *)rd_buffer)[i] = tmp_rxd;
+    ((struct e1000_rx_desc *)rx_desc_ring->ring_buffer)[i] = tmp_rxd;
   }
 
-  DEBUG("RX BUFFER AT %p\n",rd_buffer); // we need this to be < 4GB
+  DEBUG("RX BUFFER AT %p\n",rx_desc_ring->ring_buffer); // we need this to be < 4GB
 
   // store the address of the memory in TDBAL/TDBAH 
-  WRITE(vdev, RDBAL_OFFSET, (uint32_t)(0x00000000ffffffff & (uint64_t) rd_buffer));
-  WRITE(vdev, RDBAH_OFFSET, (uint32_t)((0xffffffff00000000 & (uint64_t) rd_buffer) >> 32));
+  WRITE(vdev, RDBAL_OFFSET, (uint32_t)(0x00000000ffffffff & (uint64_t) rx_desc_ring->ring_buffer));
+  WRITE(vdev, RDBAH_OFFSET, (uint32_t)((0xffffffff00000000 & (uint64_t) rx_desc_ring->ring_buffer) >> 32));
   DEBUG("rd_buffer=0x%016lx, RDBAL=0x%08x, RDBAH=0x%08x\n",
-        rd_buffer, READ(vdev, RDBAL_OFFSET), READ(vdev, RDBAH_OFFSET));
+        rx_desc_ring->ring_buffer, READ(vdev, RDBAL_OFFSET), READ(vdev, RDBAH_OFFSET));
   // write rdlen
   WRITE(vdev, RDLEN_OFFSET, rd_buff_size);
   // write the rdh, rdt with 0
@@ -164,6 +173,34 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
   return 0;
 }
 
+static int e1000_receive_packet(void* packet_addr, uint16_t packet_size) {
+  /* uint64_t tdt = READ(vdev, TDT_OFFSET); // get current tail */
+  /* struct e1000_tx_desc *d  = (struct e1000_tx_desc *)((char*)td_buffer + sizeof(struct e1000_tx_desc) * tdt); */
+
+  /* memset(d,0,sizeof(struct e1000_tx_desc)); */
+
+  /* DEBUG("td buffer=%d\n", td_buffer);  */
+  /* DEBUG("sizeof descriptor=%d\n", sizeof(struct e1000_tx_desc));  */
+  /* DEBUG("descriptor addr=%d\n", d);  */
+  /* DEBUG("TDT=%d\n", tdt);   */
+
+  /* d->cmd.dext = 0; */
+  /* d->cmd.vle = 0; */
+  /* d->cmd.eop = 1; */
+  /* d->cmd.ifcs = 1;   */
+  /* d->cmd.rs = 1;   */
+  /* d->addr = (uint64_t)packet_addr; */
+  /* d->length = packet_size; */
+  
+  /* DEBUG("Sizeof e1000_tx_desc is %d\n",sizeof(struct e1000_tx_desc)); */
+
+  /* WRITE(vdev, TDT_OFFSET, tdt+1); //increment transmit descriptor list tail by 1 */
+  /* DEBUG("TDT=%d\n", READ(vdev, TDT_OFFSET));   */
+  /* DEBUG("TDH=%d\n", READ(vdev, TDH_OFFSET)); */
+  /* DEBUG("e1000 status=0x%x\n", READ(vdev, 0x8));   */
+  return 0;
+}
+
 int e1000_get_characteristics(void *state, struct nk_net_dev_characteristics *c) {
   struct e1000_state *e=(struct e1000_state*)state;
   // c->mac=macaddress of the device from the state
@@ -178,8 +215,10 @@ int e1000_interupt_handler() {
   // 2. figure why the interrupt error rx tx
   // 3. assume tx
   // 4. determine the position of the descriptor that is done
-  // 5. use the data structure in e1000_post_send 3. to map the pos back to callback and context
+  // 5. use the data structure in e1000_post_send 3. to map the pos back to
+  // callback and context
   // 6. run callback(context);
+  return 0;
 }
 int e1000_post_send(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
   struct e1000_state *e=(struct e1000_state*)state;
@@ -188,16 +227,24 @@ int e1000_post_send(void *state, uint8_t *src, uint64_t len, void (*callback)(vo
   // queue full return -1
   // as simple as possible
   // 1. create the descriptor based on src (pkt address), len (length of the pkt)
-  // 2. queue the descriptor in the hw and record the pos of the descriptor of the ring
-  // 3. put the data structure to map the pos in the ring from 2. to callback and context
+  // 2. queue the descriptor in the hw and record the pos of the descriptor of
+  // the ring
+  // 3. put the data structure to map the pos in the ring from 2. to callback
+  // and context (struct ...) [] -> callback and context
+  // ring desc [ ] [ ] [ ]
+  // array     [ ] [ ] [ ]
   return 0; //succeeds
 }
 int e1000_post_receive(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
   // start the tx
   // 1. create the descriptor based on src (pkt address), len (length of the pkt)
-  // 2. queue the descriptor in the hw and record the pos of the descriptor of the ring
-  // 3. put the data structure to map the pos in the ring from 2. to callback and context  
+  // 2. queue the descriptor in the hw and record the pos of the descriptor of
+  // the ring
+  // 3. put the data structure to map the pos in the ring from 2. to
+  // callback and context
+  return 0;
 }
+
 static struct nk_net_dev_int ops={
   .get_characteristics=e1000_get_characteristics,
   .post_receive=e1000_post_receive,
@@ -362,8 +409,8 @@ int e1000_pci_init(struct naut_info * naut)
   // need to init each e1000
   e1000_init_transmit_ring(RX_DSC_COUNT);
   e1000_init_receive_ring(TX_BLOCKSIZE, TX_DSC_COUNT);
-  return 0; // end of the function here
-
+/*   return 0; // end of the function here */
+/* } */
   // ***************** INIT IS COMPLETE ************************* //
   
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
@@ -386,19 +433,20 @@ int e1000_pci_init(struct naut_info * naut)
 
           for(int i =0; i<rcv_desc_count; i++)
           {
-              DEBUG("status of rd %d: %d\n", i, ((struct e1000_rx_desc*)rd_buffer)[i].status);
-              if(((struct e1000_rx_desc*)rd_buffer)[i].status.dd & 1)
+              DEBUG("status of rd %d: %d\n", i, ((struct e1000_rx_desc*)
+                                                 rx_desc_ring->ring_buffer)[i].status);
+              if(((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[i].status.dd & 1)
               {
-                    DEBUG("value is: %d, length is: %d\n", 
-                            *(uint64_t*)((uint8_t*)rcv_buffer+rcv_block_size*i),
-                            ((struct e1000_rx_desc*)rd_buffer)[i].length);
-                    for(int j=0; j<((struct e1000_rx_desc*)rd_buffer)[i].length; j++)
+                    DEBUG("value is: %d, length is: %d\n",
+                          *(uint64_t*)((uint8_t*)rcv_buffer+rcv_block_size*i),
+                          ((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[i].length);
+                    for(int j=0; j<((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[i].length; j++)
                     {
                         DEBUG("index:%d %02x\n", j, *(uint8_t*)((uint8_t*)rcv_buffer+rcv_block_size*i + j));
                         if(j%8 == 0)
                         {
                           DEBUG("byte: %d ----------------------------------------\n", j);
-                        }                        
+                        }
                         /* if(j%2 == 1) */
                         /* { */
                         /*     DEBUG(" "); */

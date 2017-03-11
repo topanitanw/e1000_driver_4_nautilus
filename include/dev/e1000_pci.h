@@ -89,6 +89,11 @@ struct e1000_dev {
   uint64_t  mem_end;
 };
 
+struct e1000_rx_ring {
+  volatile void *ring_buffer;
+  volatile uint8_t tail_pos;
+};
+
 struct e1000_rx_desc {
   volatile uint64_t addr;
   volatile uint16_t length;

@@ -90,8 +90,9 @@ struct e1000_dev {
 };
 
 struct e1000_rx_ring {
-  volatile void *ring_buffer;
-  volatile uint8_t tail_pos;
+  volatile void     *ring_buffer;
+  volatile uint8_t  head_prev;
+  volatile uint8_t  tail_pos;
 };
 
 struct e1000_rx_desc {

@@ -14,15 +14,13 @@
 #define ERROR(fmt, args...) ERROR_PRINT("E1000_PCI: ERROR: " fmt, ##args)
 #define READ(d, o) (*((volatile uint32_t*)(((d)->mem_start)+(o))))
 #define WRITE(d, o, v) ((*((volatile uint32_t*)(((d)->mem_start)+(o))))=(v))
-#define READL(d, o) (*((volatile uint64_t*)(((d)->mem_start)+(o))))
-#define WRITEL(d, o, v) ((*((volatile uint64_t*)(((d)->mem_start)+(o))))=(v))
+#define RXD_STATUS(i)  (((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[(i)].status)
+#define RXD_LENGTH(i)  (((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[(i)].length)
+#define RXD_ADDR(i)  ((uint64_t*)(((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[(i)].addr))
 
 // linked list of e1000 devices
 // static global var to this only file
 static struct list_head dev_list;
-// TODO allocate rx_desc and tx_desc for only one packet -> 4 descriptors
-static struct e1000_rx_desc rx_desc[4];
-static struct e1000_tx_desc tx_desc[4];
 // transmitting buffer
 static void *td_buffer;
 static int td_buff_size;
@@ -48,6 +46,14 @@ Description of Receive process
 	The receive buffer is an array of blocks that the recieve descriptors are pointing too
 */	
 
+static int e1000_init_single_rxd(int index){
+  // initialize single descriptor pointing to where device can write rcv'd packet
+    struct e1000_rx_desc tmp_rxd;
+    memset(&tmp_rxd, 0, sizeof(e1000_rx_desc));
+    tmp_rxd.addr = (uint64_t)((uint8_t*)rcv_buffer + rcv_block_size*index);
+    ((struct e1000_rx_desc *)rx_desc_ring->ring_buffer)[index] = tmp_rxd;
+    return 0;
+}
 
 // initialize a ring buffer to hold receive descriptor and 
 // another buffer for DMA space 
@@ -86,11 +92,7 @@ static int e1000_init_receive_ring(int blocksize, int blockcount)
  
   // initialize descriptors pointing to where device can write rcv'd packets
   for(int i=0; i<rcv_desc_count; i++)
-  {
-    struct e1000_rx_desc tmp_rxd;
-    tmp_rxd.addr = (uint64_t)((uint8_t*)rcv_buffer + rcv_block_size*i);
-    ((struct e1000_rx_desc *)rx_desc_ring->ring_buffer)[i] = tmp_rxd;
-  }
+  { e1000_init_single_rxd(i); }
 
   DEBUG("RX BUFFER AT %p\n",rx_desc_ring->ring_buffer); // we need this to be < 4GB
 
@@ -104,6 +106,8 @@ static int e1000_init_receive_ring(int blocksize, int blockcount)
   // write the rdh, rdt with 0
   WRITE(vdev, RDH_OFFSET, 0);
   WRITE(vdev, RDT_OFFSET, 0);
+  rx_desc_ring->head_prev = 0;
+  rx_desc_ring->tail_pos = 0;
   // write rctl register
   WRITE(vdev, RCTL_OFFSET, 0x0083832e);
   DEBUG("RDLEN=0x%08x, RDH=0x%08x, RDT=0x%08x, RCTL=0x%08x",
@@ -173,32 +177,43 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
   return 0;
 }
 
-static int e1000_receive_packet(void* packet_addr, uint16_t packet_size) {
-  /* uint64_t tdt = READ(vdev, TDT_OFFSET); // get current tail */
-  /* struct e1000_tx_desc *d  = (struct e1000_tx_desc *)((char*)td_buffer + sizeof(struct e1000_tx_desc) * tdt); */
-
-  /* memset(d,0,sizeof(struct e1000_tx_desc)); */
-
-  /* DEBUG("td buffer=%d\n", td_buffer);  */
-  /* DEBUG("sizeof descriptor=%d\n", sizeof(struct e1000_tx_desc));  */
-  /* DEBUG("descriptor addr=%d\n", d);  */
-  /* DEBUG("TDT=%d\n", tdt);   */
-
-  /* d->cmd.dext = 0; */
-  /* d->cmd.vle = 0; */
-  /* d->cmd.eop = 1; */
-  /* d->cmd.ifcs = 1;   */
-  /* d->cmd.rs = 1;   */
-  /* d->addr = (uint64_t)packet_addr; */
-  /* d->length = packet_size; */
-  
-  /* DEBUG("Sizeof e1000_tx_desc is %d\n",sizeof(struct e1000_tx_desc)); */
-
-  /* WRITE(vdev, TDT_OFFSET, tdt+1); //increment transmit descriptor list tail by 1 */
-  /* DEBUG("TDT=%d\n", READ(vdev, TDT_OFFSET));   */
-  /* DEBUG("TDH=%d\n", READ(vdev, TDH_OFFSET)); */
-  /* DEBUG("e1000 status=0x%x\n", READ(vdev, 0x8));   */
-  return 0;
+static void* e1000_receive_packet(uint64_t* dst_addr, int dst_size) {
+  int headpos;
+  int consumed;
+  int index;
+  bool eop = false;
+  while(1){
+      headpos = READ(vdev, RDH_OFFSET);
+      rx_desc_ring->tail_pos = READ(vdev, RDT_OFFSET);
+      consumed = (RX_DSC_COUNT + headpos - rx_desc_ring->head_prev) % RX_DSC_COUNT;
+      for(int i = 0; i < consumed; i++){
+          // we move data from rcv_blocks to dst_block as rxd's are consumed
+          index = (i + rx_desc_ring->head_prev) % RX_DSC_COUNT;
+          // if descriptor done (dd), data has been copied into the block
+          // corresponding to the descriptor
+          if(RXD_STATUS(index).dd & 1){
+              for(int j = 0; j < RXD_LENGTH(index)/64; j++){
+                  //TODO check DMA atomic size; right now we assume it's multiples
+                  //of 64B
+                  dst_addr[j] = RXD_ADDR(index)[j];
+              }
+              // move the tail 
+              rx_desc_ring->head_prev = (rx_desc_ring->head_prev + 1) % RX_DSC_COUNT;
+              e1000_init_single_rxd(index);
+              rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + 1) % RX_DSC_COUNT;
+              // is end of packet (eop)?
+              if(RXD_STATUS(index).eop & 1){
+                  eop = true;
+              }
+          }
+      }
+      if(eop){ 
+          break;
+          // TODO clear any remaining consumed descriptors (ie, for out of
+          // sequence packets where we see eop in an early rxd
+      }
+  }
+  return (void*)0;
 }
 
 int e1000_get_characteristics(void *state, struct nk_net_dev_characteristics *c) {

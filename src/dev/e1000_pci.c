@@ -49,7 +49,7 @@ Description of Receive process
 static int e1000_init_single_rxd(int index){
   // initialize single descriptor pointing to where device can write rcv'd packet
     struct e1000_rx_desc tmp_rxd;
-    memset(&tmp_rxd, 0, sizeof(e1000_rx_desc));
+    memset(&tmp_rxd, 0, sizeof(struct e1000_rx_desc));
     tmp_rxd.addr = (uint64_t)((uint8_t*)rcv_buffer + rcv_block_size*index);
     ((struct e1000_rx_desc *)rx_desc_ring->ring_buffer)[index] = tmp_rxd;
     return 0;
@@ -181,7 +181,15 @@ static void* e1000_receive_packet(uint64_t* dst_addr, int dst_size) {
   int headpos;
   int consumed;
   int index;
-  bool eop = false;
+  int eop = 0;
+  // make sure a full, fresh ring is available for packet
+  for(int m = 0; m < RX_DSC_COUNT; m++){
+      e1000_init_single_rxd(m);
+  }
+  rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + RX_DSC_COUNT-1) % RX_DSC_COUNT;
+  WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
+
+  // start listening
   while(1){
       headpos = READ(vdev, RDH_OFFSET);
       rx_desc_ring->tail_pos = READ(vdev, RDT_OFFSET);
@@ -192,6 +200,7 @@ static void* e1000_receive_packet(uint64_t* dst_addr, int dst_size) {
           // if descriptor done (dd), data has been copied into the block
           // corresponding to the descriptor
           if(RXD_STATUS(index).dd & 1){
+              DEBUG("dd: %d\n", RXD_STATUS(index).dd);
               for(int j = 0; j < RXD_LENGTH(index)/64; j++){
                   //TODO check DMA atomic size; right now we assume it's multiples
                   //of 64B
@@ -201,16 +210,16 @@ static void* e1000_receive_packet(uint64_t* dst_addr, int dst_size) {
               rx_desc_ring->head_prev = (rx_desc_ring->head_prev + 1) % RX_DSC_COUNT;
               e1000_init_single_rxd(index);
               rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + 1) % RX_DSC_COUNT;
+              WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
               // is end of packet (eop)?
+              DEBUG("eop: %d\n", RXD_STATUS(index).eop);
               if(RXD_STATUS(index).eop & 1){
-                  eop = true;
+                  eop = 1;
               }
           }
       }
       if(eop){ 
           break;
-          // TODO clear any remaining consumed descriptors (ie, for out of
-          // sequence packets where we see eop in an early rxd
       }
   }
   return (void*)0;
@@ -431,7 +440,7 @@ int e1000_pci_init(struct naut_info * naut)
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
   uint64_t* my_rcv_space = malloc(8*1024);
-  DEBUG("received a packet");
+  DEBUG("receiving a packet");
   e1000_receive_packet(my_rcv_space, 8*1024);
     for(int j=0; j<42; j++)
     {

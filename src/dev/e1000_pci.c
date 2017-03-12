@@ -207,17 +207,25 @@ static void* e1000_receive_packet(uint64_t* dst_addr, int dst_size) {
                   dst_addr[j] = RXD_ADDR(index)[j];
               }
               // move the tail 
-              rx_desc_ring->head_prev = (rx_desc_ring->head_prev + 1) % RX_DSC_COUNT;
-              e1000_init_single_rxd(index);
-              rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + 1) % RX_DSC_COUNT;
-              WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
+             // rx_desc_ring->head_prev = (rx_desc_ring->head_prev + 1) % RX_DSC_COUNT;
+             // e1000_init_single_rxd(index);
+		
+             // rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + 1) % RX_DSC_COUNT;
+             // WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
               // is end of packet (eop)?
               DEBUG("eop: %d\n", RXD_STATUS(index).eop);
               if(RXD_STATUS(index).eop & 1){
                   eop = 1;
-              }
-          }
-      }
+              }        
+}
+rx_desc_ring->head_prev = (rx_desc_ring->head_prev + 1) % RX_DSC_COUNT;
+              e1000_init_single_rxd(index);
+
+              rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + 1) % RX_DSC_COUNT;
+              WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
+      
+}
+
       if(eop){ 
           break;
       }

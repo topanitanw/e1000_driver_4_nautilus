@@ -65,9 +65,9 @@
 /* these may need to dynamically change for different machines
    (for example, to allow buffer sizes to reflect mem availabilty)
 */
-#define RX_DSC_COUNT 128
-#define TX_DSC_COUNT 64 // equal to DMA block count
-#define TX_BLOCKSIZE 256 // bytes available per DMA block
+#define TX_DSC_COUNT 128
+#define RX_DSC_COUNT 64 // equal to DMA block count
+#define RX_BLOCKSIZE 256 // bytes available per DMA block
 
 // new type declaration
 struct e1000_dev {

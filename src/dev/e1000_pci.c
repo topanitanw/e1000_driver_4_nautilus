@@ -27,7 +27,7 @@ static int td_buff_size;
 static void *rd_buffer;
 static void *rcv_buffer;
 static int rcv_desc_count;
-static int rcv_block_size;
+static int rcv_block_size; // TODO make this constant
 static int rd_buff_size;
 static struct e1000_dev *vdev;
 static struct e1000_rx_ring *rx_desc_ring;
@@ -422,21 +422,33 @@ int e1000_pci_init(struct naut_info * naut)
     }
   }
   // need to init each e1000
-  e1000_init_transmit_ring(RX_DSC_COUNT);
-  e1000_init_receive_ring(TX_BLOCKSIZE, TX_DSC_COUNT);
+  e1000_init_transmit_ring(TX_DSC_COUNT);
+  e1000_init_receive_ring(RX_BLOCKSIZE, RX_DSC_COUNT);
 /*   return 0; // end of the function here */
 /* } */
   // ***************** INIT IS COMPLETE ************************* //
   
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
+  uint64_t* my_rcv_space = malloc(8*1024);
+  DEBUG("received a packet");
+  e1000_receive_packet(my_rcv_space, 8*1024);
+    for(int j=0; j<42; j++)
+    {
+        DEBUG("index:%d %02x\n", j, *(uint8_t*)((uint8_t*)my_rcv_space + j));
+        if(j%8 == 0)
+        {
+          DEBUG("byte: %d ----------------------------------------\n", j);
+        }
+    }
+  DEBUG("tried to receive a packet");
   DEBUG("total pkt tx=%d\n", READ(vdev, TPT_OFFSET));
   DEBUG("total pkt tx=%d\n", READ(vdev, TPT_OFFSET));
   int sleepcount = 0;
   uint32_t headpos;
   uint32_t tailpos;
   uint32_t rstatus = 0;
-  while(1)
+  /*while(1)
   {
       if(sleepcount == 0) {
           headpos = READ(vdev, RDH_OFFSET);
@@ -462,10 +474,6 @@ int e1000_pci_init(struct naut_info * naut)
                         {
                           DEBUG("byte: %d ----------------------------------------\n", j);
                         }
-                        /* if(j%2 == 1) */
-                        /* { */
-                        /*     DEBUG(" "); */
-                        /* } */
                     }
               }
           }
@@ -474,6 +482,7 @@ int e1000_pci_init(struct naut_info * naut)
       }
       sleepcount++;
   }
+*/
 
   return 0;
 }

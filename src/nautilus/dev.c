@@ -45,94 +45,94 @@ static struct list_head dev_list;
 
 int nk_dev_init()
 {
-    INIT_LIST_HEAD(&dev_list);
-    spinlock_init(&state_lock);
-    INFO("devices inited\n");
-    return 0;
+  INIT_LIST_HEAD(&dev_list);
+  spinlock_init(&state_lock);
+  INFO("devices inited\n");
+  return 0;
 }
 
 int nk_dev_deinit()
 {
-    if (!list_empty(&dev_list)) { 
-	ERROR("Extant devices on deinit\n");
-	return -1;
-    }
-    spinlock_deinit(&state_lock);
-    INFO("device deinit\n");
-    return 0;
+  if (!list_empty(&dev_list)) { 
+    ERROR("Extant devices on deinit\n");
+    return -1;
+  }
+  spinlock_deinit(&state_lock);
+  INFO("device deinit\n");
+  return 0;
 }
 
 
 struct nk_dev *nk_dev_register(char *name, nk_dev_type_t type, uint64_t flags, struct nk_dev_int *inter, void *state)
 {
-    STATE_LOCK_CONF;
-    struct nk_dev *d = malloc(sizeof(*d));
+  STATE_LOCK_CONF;
+  struct nk_dev *d = malloc(sizeof(*d));
 
-    if (!d) {
-	ERROR("Failed to allocate device\n");
-	return 0;
-    }
+  if (!d) {
+    ERROR("Failed to allocate device\n");
+    return 0;
+  }
     
-    memset(d,0,sizeof(*d));
+  memset(d,0,sizeof(*d));
 
-    strncpy(d->name,name,DEV_NAME_LEN);
-    d->type = type;
-    d->flags = flags;
-    d->state = state;
-    d->interface = inter;
+  strncpy(d->name,name,DEV_NAME_LEN);
+  d->type = type;
+  d->flags = flags;
+  d->state = state;
+  d->interface = inter;
 
-    STATE_LOCK();
-    list_add(&d->dev_list_node,&dev_list);
-    STATE_UNLOCK();
+  STATE_LOCK();
+  list_add(&d->dev_list_node,&dev_list);
+  STATE_UNLOCK();
     
-    INFO("Added device with name %s, type %lu, flags 0x%lx\n", d->name, d->type,d->flags);
+  INFO("Added device with name %s, type %lu, flags 0x%lx\n", d->name, d->type,d->flags);
     
-    return d;
+  return d;
 }
 
 int            nk_dev_unregister(struct nk_dev *d)
 {
-    STATE_LOCK_CONF;
-    STATE_LOCK();
-    list_del(&d->dev_list_node);
-    STATE_UNLOCK();
-    INFO("Unregistered device %s\n",d->name);
-    free(d);
-    return 0;
+  STATE_LOCK_CONF;
+  STATE_LOCK();
+  list_del(&d->dev_list_node);
+  STATE_UNLOCK();
+  INFO("Unregistered device %s\n",d->name);
+  free(d);
+  return 0;
 }
 
 struct nk_dev *nk_dev_find(char *name)
 {
-    struct list_head *cur;
-    struct nk_dev *target=0;
-    STATE_LOCK_CONF;
-    STATE_LOCK();
-    list_for_each(cur,&dev_list) {
-	if (!strncasecmp(list_entry(cur,struct nk_dev,dev_list_node)->name,name,DEV_NAME_LEN)) { 
+  struct list_head *cur;
+  struct nk_dev *target=0;
+  STATE_LOCK_CONF;
+  STATE_LOCK();
+  list_for_each(cur,&dev_list) {
+    if (!strncasecmp(list_entry(cur,struct nk_dev,dev_list_node)->name,name,DEV_NAME_LEN)) { 
 	    target = list_entry(cur,struct nk_dev, dev_list_node);
 	    break;
-	}
     }
-    STATE_UNLOCK();
-    return target;
+  }
+  STATE_UNLOCK();
+  return target;
 }
 
 
 void nk_dev_dump_devices()
 {
-    struct list_head *cur;
-    STATE_LOCK_CONF;
-    STATE_LOCK();
-    list_for_each(cur,&dev_list) {
-	struct nk_dev *d = list_entry(cur,struct nk_dev, dev_list_node);
-	nk_vc_printf("%s: %s flags=0x%lx\n",
-		     d->name, 
-		     d->type==NK_DEV_CHAR ? "char" : 
-		     d->type==NK_DEV_BLK ? "block" :
-		     d->type==NK_DEV_NET ? "net" : "unknown", 
-		     d->flags);
+  struct list_head *cur;
+  STATE_LOCK_CONF;
+  STATE_LOCK();
+  list_for_each(cur,&dev_list) {
+    struct nk_dev *d = list_entry(cur,struct nk_dev, dev_list_node);
+    nk_vc_printf("%s: %s flags=0x%lx\n",
+                 d->name, 
+                 d->type==NK_DEV_CHAR ? "char" : 
+                 d->type==NK_DEV_BLK ? "block" :
+                 d->type==NK_DEV_NET ? "net" : "unknown", 
+                 d->flags);
 		     
-    }
-    STATE_UNLOCK();
+  }
+  STATE_UNLOCK();
 }
 

@@ -35,24 +35,24 @@ static struct e1000_rx_ring *rx_desc_ring;
 int my_packet[16] = {0xdeadbeef,0xbeefdead,};
     
 /*
-Description of Receive process
+  Description of Receive process
 
-1) recieve descriptor must fit inside of the ring of 1024 (arbritary)
+  1) recieve descriptor must fit inside of the ring of 1024 (arbritary)
 	however, all of these recieve have headers are headers that point to blocks of memory
-				(where the device is going to automatically store the incoming data from packets)
-				The number of recieve descriptors is set by the size (16 receive descriptors can fit in 1k)
-		The ring is an array of receive descriptors (the address part consumes 8 bytes of each recieve descriptor)
-			(other 8 bytes are about the status and size, etc..., [and device will change this])	
+  (where the device is going to automatically store the incoming data from packets)
+  The number of recieve descriptors is set by the size (16 receive descriptors can fit in 1k)
+  The ring is an array of receive descriptors (the address part consumes 8 bytes of each recieve descriptor)
+  (other 8 bytes are about the status and size, etc..., [and device will change this])	
 	The receive buffer is an array of blocks that the recieve descriptors are pointing too
 */	
 
 static int e1000_init_single_rxd(int index){
   // initialize single descriptor pointing to where device can write rcv'd packet
-    struct e1000_rx_desc tmp_rxd;
-    memset(&tmp_rxd, 0, sizeof(struct e1000_rx_desc));
-    tmp_rxd.addr = (uint64_t)((uint8_t*)rcv_buffer + rcv_block_size*index);
-    ((struct e1000_rx_desc *)rx_desc_ring->ring_buffer)[index] = tmp_rxd;
-    return 0;
+  struct e1000_rx_desc tmp_rxd;
+  memset(&tmp_rxd, 0, sizeof(struct e1000_rx_desc));
+  tmp_rxd.addr = (uint64_t)((uint8_t*)rcv_buffer + rcv_block_size*index);
+  ((struct e1000_rx_desc *)rx_desc_ring->ring_buffer)[index] = tmp_rxd;
+  return 0;
 }
 
 // initialize a ring buffer to hold receive descriptor and 
@@ -134,7 +134,7 @@ static int e1000_init_transmit_ring(int tx_dsc_count)
   WRITE(vdev, TDBAH_OFFSET, (uint32_t)((0xffffffff00000000 & (uint64_t) td_buffer) >> 32));
   DEBUG("td_buffer=0x%016lx, TDBAL=0x%08x, TDBAH=0x%08x\n",
         td_buffer, READ(vdev, TDBAL_OFFSET), READ(vdev, TDBAH_OFFSET));
-  // write tdlen
+  // write tdlen: transmit descriptor length
   WRITE(vdev, TDLEN_OFFSET, 64*1024);
   // write the tdh, tdt with 0
   WRITE(vdev, TDT_OFFSET, 0);
@@ -170,9 +170,10 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
   
   DEBUG("Sizeof e1000_tx_desc is %d\n",sizeof(struct e1000_tx_desc));
 
-  WRITE(vdev, TDT_OFFSET, tdt+1); //increment transmit descriptor list tail by 1
-  DEBUG("TDT=%d\n", READ(vdev, TDT_OFFSET));  
+  //increment transmit descriptor list tail by 1
+  WRITE(vdev, TDT_OFFSET, (tdt+1)%TX_DSC_COUNT); 
   DEBUG("TDH=%d\n", READ(vdev, TDH_OFFSET));
+  DEBUG("TDT=%d\n", READ(vdev, TDT_OFFSET));  
   DEBUG("e1000 status=0x%x\n", READ(vdev, 0x8));  
   return 0;
 }
@@ -184,51 +185,51 @@ static void* e1000_receive_packet(uint64_t* dst_addr, int dst_size) {
   int eop = 0;
   // make sure a full, fresh ring is available for packet
   for(int m = 0; m < RX_DSC_COUNT; m++){
-      e1000_init_single_rxd(m);
+    e1000_init_single_rxd(m);
   }
   rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + RX_DSC_COUNT-1) % RX_DSC_COUNT;
   WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
 
   // start listening
   while(1){
-      headpos = READ(vdev, RDH_OFFSET);
-      rx_desc_ring->tail_pos = READ(vdev, RDT_OFFSET);
-      consumed = (RX_DSC_COUNT + headpos - rx_desc_ring->head_prev) % RX_DSC_COUNT;
-      for(int i = 0; i < consumed; i++){
-          // we move data from rcv_blocks to dst_block as rxd's are consumed
-          index = (i + rx_desc_ring->head_prev) % RX_DSC_COUNT;
-          // if descriptor done (dd), data has been copied into the block
-          // corresponding to the descriptor
-          if(RXD_STATUS(index).dd & 1){
-              DEBUG("dd: %d\n", RXD_STATUS(index).dd);
-              for(int j = 0; j < RXD_LENGTH(index)/64; j++){
-                  //TODO check DMA atomic size; right now we assume it's multiples
-                  //of 64B
-                  dst_addr[j] = RXD_ADDR(index)[j];
-              }
-              // move the tail 
-             // rx_desc_ring->head_prev = (rx_desc_ring->head_prev + 1) % RX_DSC_COUNT;
-             // e1000_init_single_rxd(index);
+    headpos = READ(vdev, RDH_OFFSET);
+    rx_desc_ring->tail_pos = READ(vdev, RDT_OFFSET);
+    consumed = (RX_DSC_COUNT + headpos - rx_desc_ring->head_prev) % RX_DSC_COUNT;
+    for(int i = 0; i < consumed; i++){
+      // we move data from rcv_blocks to dst_block as rxd's are consumed
+      index = (i + rx_desc_ring->head_prev) % RX_DSC_COUNT;
+      // if descriptor done (dd), data has been copied into the block
+      // corresponding to the descriptor
+      if(RXD_STATUS(index).dd & 1){
+        DEBUG("dd: %d\n", RXD_STATUS(index).dd);
+        for(int j = 0; j < RXD_LENGTH(index)/64; j++){
+          //TODO check DMA atomic size; right now we assume it's multiples
+          //of 64B
+          dst_addr[j] = RXD_ADDR(index)[j];
+        }
+        // move the tail 
+        // rx_desc_ring->head_prev = (rx_desc_ring->head_prev + 1) % RX_DSC_COUNT;
+        // e1000_init_single_rxd(index);
 		
-             // rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + 1) % RX_DSC_COUNT;
-             // WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
-              // is end of packet (eop)?
-              DEBUG("eop: %d\n", RXD_STATUS(index).eop);
-              if(RXD_STATUS(index).eop & 1){
-                  eop = 1;
-              }        
-}
-rx_desc_ring->head_prev = (rx_desc_ring->head_prev + 1) % RX_DSC_COUNT;
-              e1000_init_single_rxd(index);
-
-              rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + 1) % RX_DSC_COUNT;
-              WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
-      
-}
-
-      if(eop){ 
-          break;
+        // rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + 1) % RX_DSC_COUNT;
+        // WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
+        // is end of packet (eop)?
+        DEBUG("eop: %d\n", RXD_STATUS(index).eop);
+        if(RXD_STATUS(index).eop & 1){
+          eop = 1;
+        }        
       }
+      rx_desc_ring->head_prev = (rx_desc_ring->head_prev + 1) % RX_DSC_COUNT;
+      e1000_init_single_rxd(index);
+
+      rx_desc_ring->tail_pos = (rx_desc_ring->tail_pos + 1) % RX_DSC_COUNT;
+      WRITE(vdev, RDH_OFFSET, rx_desc_ring->tail_pos);
+      
+    }
+
+    if(eop){ 
+      break;
+    }
   }
   return (void*)0;
 }
@@ -450,14 +451,14 @@ int e1000_pci_init(struct naut_info * naut)
   uint64_t* my_rcv_space = malloc(8*1024);
   DEBUG("receiving a packet");
   e1000_receive_packet(my_rcv_space, 8*1024);
-    for(int j=0; j<42; j++)
+  for(int j=0; j<42; j++)
+  {
+    DEBUG("index:%d %02x\n", j, *(uint8_t*)((uint8_t*)my_rcv_space + j));
+    if(j%8 == 0)
     {
-        DEBUG("index:%d %02x\n", j, *(uint8_t*)((uint8_t*)my_rcv_space + j));
-        if(j%8 == 0)
-        {
-          DEBUG("byte: %d ----------------------------------------\n", j);
-        }
+      DEBUG("byte: %d ----------------------------------------\n", j);
     }
+  }
   DEBUG("tried to receive a packet");
   DEBUG("total pkt tx=%d\n", READ(vdev, TPT_OFFSET));
   DEBUG("total pkt tx=%d\n", READ(vdev, TPT_OFFSET));
@@ -466,40 +467,40 @@ int e1000_pci_init(struct naut_info * naut)
   uint32_t tailpos;
   uint32_t rstatus = 0;
   /*while(1)
-  {
-      if(sleepcount == 0) {
-          headpos = READ(vdev, RDH_OFFSET);
-          tailpos = READ(vdev, RDT_OFFSET);
-          if (headpos == tailpos)
-          {
-              WRITE(vdev, RDT_OFFSET, (tailpos+1)%rcv_desc_count);
-          }
+    {
+    if(sleepcount == 0) {
+    headpos = READ(vdev, RDH_OFFSET);
+    tailpos = READ(vdev, RDT_OFFSET);
+    if (headpos == tailpos)
+    {
+    WRITE(vdev, RDT_OFFSET, (tailpos+1)%rcv_desc_count);
+    }
 
-          for(int i =0; i<rcv_desc_count; i++)
-          {
-              DEBUG("status of rd %d: %d\n", i, ((struct e1000_rx_desc*)
-                                                 rx_desc_ring->ring_buffer)[i].status);
-              if(((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[i].status.dd & 1)
-              {
-                    DEBUG("value is: %d, length is: %d\n",
-                          *(uint64_t*)((uint8_t*)rcv_buffer+rcv_block_size*i),
-                          ((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[i].length);
-                    for(int j=0; j<((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[i].length; j++)
-                    {
-                        DEBUG("index:%d %02x\n", j, *(uint8_t*)((uint8_t*)rcv_buffer+rcv_block_size*i + j));
-                        if(j%8 == 0)
-                        {
-                          DEBUG("byte: %d ----------------------------------------\n", j);
-                        }
-                    }
-              }
-          }
-      } else if(sleepcount > 99999999999999999999){
-          sleepcount = -1;
-      }
-      sleepcount++;
-  }
-*/
+    for(int i =0; i<rcv_desc_count; i++)
+    {
+    DEBUG("status of rd %d: %d\n", i, ((struct e1000_rx_desc*)
+    rx_desc_ring->ring_buffer)[i].status);
+    if(((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[i].status.dd & 1)
+    {
+    DEBUG("value is: %d, length is: %d\n",
+    *(uint64_t*)((uint8_t*)rcv_buffer+rcv_block_size*i),
+    ((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[i].length);
+    for(int j=0; j<((struct e1000_rx_desc*)rx_desc_ring->ring_buffer)[i].length; j++)
+    {
+    DEBUG("index:%d %02x\n", j, *(uint8_t*)((uint8_t*)rcv_buffer+rcv_block_size*i + j));
+    if(j%8 == 0)
+    {
+    DEBUG("byte: %d ----------------------------------------\n", j);
+    }
+    }
+    }
+    }
+    } else if(sleepcount > 99999999999999999999){
+    sleepcount = -1;
+    }
+    sleepcount++;
+    }
+  */
 
   return 0;
 }

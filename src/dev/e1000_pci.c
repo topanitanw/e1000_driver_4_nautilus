@@ -50,7 +50,7 @@ static struct e1000_dev *dev;
 static struct e1000_ring *rx_desc_ring;
 static struct e1000_ring *tx_desc_ring;
 
-int my_packet[99999] = {0xdeadbeef,0xbeefdead,};
+int my_packet[400] = {0xdeadbeef,0xbeefdead,};
     
 /*
   Description of Receive process
@@ -204,6 +204,7 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
   uint64_t oldest = TXD_TAIL;
   uint64_t index;
   uint16_t i;
+  uint8_t eop = 0;
   while(remaining_bytes > 0 || unresolved != 0){
 
       DEBUG("td buffer=%d\n", TXD_RING_BUFFER); 
@@ -228,11 +229,11 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
 
           TXD_CMD(TXD_TAIL).dext = 0;
           TXD_CMD(TXD_TAIL).vle = 0;
-          TXD_CMD(TXD_TAIL).eop = 1;
+          TXD_CMD(TXD_TAIL).eop = !(remaining_bytes);
           TXD_CMD(TXD_TAIL).ifcs = 1;  
           TXD_CMD(TXD_TAIL).rs = 1;  
           TXD_LENGTH(TXD_TAIL) = i;
-          
+
           DEBUG("Sizeof e1000_tx_desc is %d\n",sizeof(struct e1000_tx_desc));
 
           //increment transmit descriptor list tail by 1

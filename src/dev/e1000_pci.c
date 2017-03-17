@@ -28,7 +28,7 @@
 #define RXD_INC(a,b) (((a) + (b)) % RXD_RING->count) // modular increment txd index
 #define NEXT_RXD RXD_INC(RXD_RING->tail_pos, 1)
 
-#define TXD_RING (tx_desc_ring) // e1000_ring *
+#define TXD_RING (state->tx_ring) // e1000_ring *
 #define TXD_PREV_HEAD (TXD_RING->head_prev)
 #define TXD_TAIL (TXD_RING->tail_pos)
 #define TX_PACKET_BUFFER   (TXD_RING->packet_buffer) // void *, packet buff addr
@@ -50,7 +50,7 @@ static struct e1000_dev *dev;
 static struct e1000_ring *rx_desc_ring;
 static struct e1000_ring *tx_desc_ring;
 
-int my_packet[400] = {0xdeadbeef,0xbeefdead,};
+int my_packet[16] = {0xdeadbeef,0xbeefdead,};
     
 /*
   Description of Receive process
@@ -64,7 +64,11 @@ int my_packet[400] = {0xdeadbeef,0xbeefdead,};
 	The receive buffer is an array of blocks that the recieve descriptors are pointing too
 */	
 
-static int e1000_init_single_txd(int index){
+
+// init_single_txd and init_single_rxd both assume that we're only using continuous space in memory
+// to form an "array" of blocks; this doesn't have to be the case. If we want to dynamically
+// allocate blocks from arbitrary places, mess with these functions
+static int e1000_init_single_txd(int index, struct e1000_state *state){
   // initialize single descriptor pointing to where device can write rcv'd packet
   struct e1000_tx_desc tmp_txd;
   memset(&tmp_txd, 0, sizeof(struct e1000_tx_desc));
@@ -145,7 +149,7 @@ static int e1000_init_receive_ring(int blocksize, int blockcount, struct e1000_s
 }
 
 // initialize ring buffer to hold transmit descriptors 
-static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count)
+static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e1000_state *state)
 {
   TXD_RING = malloc(sizeof(struct e1000_ring));
   if (!TXD_RING) {
@@ -198,18 +202,20 @@ static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count)
   return 0;
 }
 
-static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
+static int e1000_send_packet(void* packet_addr, uint16_t packet_size, struct e1000_state *state){
   uint16_t remaining_bytes = packet_size;
   uint64_t unresolved = 0;
   uint64_t oldest = TXD_TAIL;
   uint64_t index;
   uint16_t i;
   uint8_t eop = 0;
+  // loop until 1) all bytes have been pushed to descriptors
+  //      and   2) all used descriptors have been marked as done (sent) 
   while(remaining_bytes > 0 || unresolved != 0){
-
       DEBUG("td buffer=%d\n", TXD_RING_BUFFER); 
       DEBUG("TDT=%d\n", TXD_TAIL);
       if(unresolved){
+        // see if any not previously done txd's are now done
           for(index = oldest; index != TXD_TAIL; index++){
               if(TXD_STATUS(index).dd & 1){
                   oldest = TXD_INC(index, 1);
@@ -220,15 +226,18 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
           }
       }
       if(remaining_bytes > 0 && READ(dev, TDH_OFFSET) != NEXT_TXD){
-          e1000_init_single_txd(TXD_TAIL); // make new descriptor
+          // push as many remaining bytes as possible onto a new txd's block
+          e1000_init_single_txd(TXD_TAIL, state); // make new descriptor
           for(i = 0; remaining_bytes > 0 && i < TXD_RING->blocksize; i++){
               // we do this a byte at a time; maybe use memcpy instead
               ((uint8_t *)(TXD_ADDR(TXD_TAIL)))[i] = ((uint8_t *)packet_addr)[i];
               remaining_bytes--;
           }
 
+          // set up send flags
           TXD_CMD(TXD_TAIL).dext = 0;
           TXD_CMD(TXD_TAIL).vle = 0;
+          // set the end of packet flag if this is the last fragment
           TXD_CMD(TXD_TAIL).eop = !(remaining_bytes);
           TXD_CMD(TXD_TAIL).ifcs = 1;  
           TXD_CMD(TXD_TAIL).rs = 1;  
@@ -238,7 +247,7 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size){
 
           //increment transmit descriptor list tail by 1
           WRITE(dev, TDT_OFFSET, NEXT_TXD);
-          unresolved++;
+          unresolved++; // note that there is a new not done txd
           TXD_TAIL = NEXT_TXD;
           DEBUG("TDH=%d\n", READ(dev, TDH_OFFSET));
           DEBUG("TDT=%d\n", READ(dev, TDT_OFFSET));  
@@ -503,10 +512,9 @@ int e1000_pci_init(struct naut_info * naut)
         DEBUG("e1000 mac=0x%lX\n", macall);        
         DEBUG("e1000 low_mac=0x%X\n", mac_low);        
         list_add(&dev_list, &dev->e1000_node);
-        char name[80];
-        sprintf(name, "e1000-%d",num);
+        sprintf(state->name, "e1000-%d",num);
         num++;
-        dev->netdev = nk_net_dev_register(name, 0, &ops, dev);
+        dev->netdev = nk_net_dev_register(state->name, 0, &ops, dev);
         if(!dev->netdev) {
           ERROR("Cannot register the device");
         }
@@ -514,18 +522,17 @@ int e1000_pci_init(struct naut_info * naut)
     }
   }
   // need to init each e1000
-  e1000_init_transmit_ring(TX_BLOCKSIZE, TX_DSC_COUNT);
+  e1000_init_transmit_ring(TX_BLOCKSIZE, TX_DSC_COUNT, state);
   e1000_init_receive_ring(RX_BLOCKSIZE, RX_DSC_COUNT, state);
-/*   return 0; // end of the function here */
-/* } */
   // ***************** INIT IS COMPLETE ************************* //
   
-  e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
-  e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet));
+  e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet), state);
+  //e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet), state);
         DEBUG("total pkt tx=%d\n", READ(dev, TPT_OFFSET));
   uint64_t* my_rcv_space = malloc(8*1024);
   DEBUG("receiving a packet");
   e1000_receive_packet(my_rcv_space, 8*1024, state);
+  //e1000_receive_packet(my_rcv_space, 8*1024, state);
   for(int j=0; j<42; j++)
   {
     DEBUG("index:%d %02x\n", j, *(uint8_t*)((uint8_t*)my_rcv_space + j));

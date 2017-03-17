@@ -47,8 +47,6 @@
 static struct list_head dev_list;
 // transmitting buffer
 static struct e1000_dev *dev;
-static struct e1000_ring *rx_desc_ring;
-static struct e1000_ring *tx_desc_ring;
 
 int my_packet[16] = {0xdeadbeef,0xbeefdead,};
     
@@ -95,25 +93,25 @@ static int e1000_init_receive_ring(int blocksize, int blockcount, struct e1000_s
     ERROR("Cannot allocate rx buffer\n");
     return -1;
   }
+  memset(RXD_RING, 0, sizeof(struct e1000_ring));
   RXD_RING->tail_pos = 0;
   
   //these are memory blocks that will store a packet
   RXD_RING->blocksize = blocksize; //should reflect register value (256)
   // the total size of the receive descriptor ring
-  int rd_buff_size;
-  rd_buff_size = sizeof(struct e1000_rx_desc) * blockcount; //16Bytes *  ...
+  int rd_buff_size = sizeof(struct e1000_rx_desc) * blockcount; //16Bytes *  ...
   // the number of the receive descriptor in the ring
   RXD_COUNT = blockcount;
 
   // allocate a large block of memory to store receiving packets
   RX_PACKET_BUFFER = malloc(RXD_RING->blocksize * RXD_COUNT);
   if (!RX_PACKET_BUFFER) {
-    ERROR("Cannot allocate tx buffer\n");
+    ERROR("Cannot allocate rx buffer\n");
     return -1;
   }
-
   //same 
   memset(RX_PACKET_BUFFER, 0, RXD_RING->blocksize * RXD_COUNT);
+
   // allocate the receive descriptor ring buffer
   RXD_RING_BUFFER = malloc(rd_buff_size);
   if (!RXD_RING_BUFFER) {
@@ -156,7 +154,9 @@ static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e100
     ERROR("Cannot allocate tx buffer\n");
     return -1;
   }
+  memset(TXD_RING, 0, sizeof(struct e1000_ring));
   TXD_RING->tail_pos = 0;
+  
   int td_buff_size = sizeof(struct e1000_tx_desc)*tx_dsc_count;
   // allocate transmit descriptor list ring buffer for 64kB.
   TXD_RING_BUFFER = malloc(td_buff_size);
@@ -165,6 +165,7 @@ static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e100
     return -1;
   }
   memset(TXD_RING_BUFFER, 0, td_buff_size);
+  TXD_RING->blocksize = blocksize; //should reflect register value (256)
   
   TXD_COUNT = tx_dsc_count;
   TX_PACKET_BUFFER = malloc(TXD_RING->blocksize * TXD_COUNT);
@@ -172,11 +173,10 @@ static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e100
     ERROR("Cannot allocate tx buffer\n");
     return -1;
   }
-
   //same 
   memset(TX_PACKET_BUFFER, 0, TXD_RING->blocksize * TXD_COUNT);
+
   //these are memory blocks that will store a packet
-  TXD_RING->blocksize = blocksize; //should reflect register value (256)
 
   DEBUG("TX BUFFER AT %p\n",TXD_RING_BUFFER); // we need this to be < 4GB
 

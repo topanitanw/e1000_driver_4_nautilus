@@ -143,13 +143,22 @@ struct e1000_tx_desc {
   volatile uint16_t special;
 } __attribute__((packed)); 
 
+struct e1000_out_packet {
+    uint8_t *src_addr;
+    uint8_t dst_mac[6];
+    void    *callback;
+    void    *context;
+};
+
 struct e1000_state {
     volatile struct e1000_ring *rx_ring;
     volatile struct e1000_ring *tx_ring;
     char name[DEV_NAME_LEN];
     struct e1000_dev *dev;
     uint64_t mac_addr;
+    
 };
+
 
 // function declaration
 int e1000_pci_init(struct naut_info * naut);

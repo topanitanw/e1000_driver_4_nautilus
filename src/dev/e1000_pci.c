@@ -261,8 +261,9 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size, struct e10
 static void* e1000_receive_packet(uint64_t* dst_addr, int dst_size, struct e1000_state *state) {
   int headpos;
   int consumed;
-  int index;
+  int index = 0;
   int eop = 0;
+  int j;
   // init a descriptor
   RXD_TAIL = READ(state->dev, RDT_OFFSET);
   e1000_init_single_rxd(NEXT_RXD, state);
@@ -276,17 +277,18 @@ static void* e1000_receive_packet(uint64_t* dst_addr, int dst_size, struct e1000
     headpos = READ(state->dev, RDH_OFFSET);
     while(headpos != RXD_PREV_HEAD){
       if(RXD_STATUS(RXD_PREV_HEAD).dd & 1){
-        DEBUG("dd: %d\n", RXD_STATUS(index).dd);
-        for(int j = 0; j < RXD_LENGTH(index)/64; j++){
+        DEBUG("dd: %d\n", RXD_STATUS(RXD_PREV_HEAD).dd);
+        for(j = 0; j < RXD_LENGTH(RXD_PREV_HEAD)/64; j++){
           //TODO check DMA atomic size; right now we assume it's multiples
           //of 64B
-          dst_addr[j] = ((uint64_t *)(RXD_ADDR(index)))[j];
+          dst_addr[index+j] = ((uint64_t *)(RXD_ADDR(RXD_PREV_HEAD)))[j];
         }
-        RXD_PREV_HEAD = RXD_INC(RXD_PREV_HEAD, 1);
-        DEBUG("eop: %d\n", RXD_STATUS(index).eop);
-        if(RXD_STATUS(index).eop & 1){
+        index += j;
+        if(RXD_STATUS(RXD_PREV_HEAD).eop & 1){
           eop = 1;
         }        
+        DEBUG("eop: %d\n", RXD_STATUS(RXD_PREV_HEAD).eop);
+        RXD_PREV_HEAD = RXD_INC(RXD_PREV_HEAD, 1);
       }
     }
     for(int m = 0; m < RX_DSC_COUNT && RXD_INC(RXD_TAIL, m+1) != RXD_PREV_HEAD; m++){
@@ -329,7 +331,6 @@ int e1000_post_send(void *state, uint8_t *src, uint64_t len, void (*callback)(vo
   // queue full return -1
   // as simple as possible
   // 1. create the descriptor based on src (pkt address), len (length of the pkt)
-
   // 2. queue the descriptor in the hw and record the pos of the descriptor of
   // the ring
   // 3. put the data structure to map the pos in the ring from 2. to callback

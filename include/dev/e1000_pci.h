@@ -143,9 +143,17 @@ struct e1000_tx_desc {
   volatile uint16_t special;
 } __attribute__((packed)); 
 
+struct e1000_in_packet {
+    uint8_t *src_addr;
+    uint8_t dst_mac[6];
+    void    *callback;
+    void    *context;
+};
+
 struct e1000_out_packet {
     uint8_t *src_addr;
     uint8_t dst_mac[6];
+    uint64_t size;
     void    *callback;
     void    *context;
 };
@@ -156,6 +164,12 @@ struct e1000_state {
     char name[DEV_NAME_LEN];
     struct e1000_dev *dev;
     uint64_t mac_addr;
+    struct e1000_out_packet *outring; // circular queue of outgoing packets
+    struct e1000_in_packet *inring; // circular queue of incoming packets
+    uint64_t outhead;
+    uint64_t outtail;
+    uint64_t inhead;
+    uint64_t intail;
     
 };
 

@@ -42,11 +42,23 @@
 #define NEXT_TXD TXD_INC(TXD_RING->tail_pos, 1)
 #define PREV_TXD TXD_INC(TXD_RING->tail_pos, TXD_COUNT - 1)
 
+#define INCRING(a, b, c) (((a)+(b)) % c) // a is old index, b is incr amount, c is queue size
+#define OUTRING (state->outring)
+#define INRING (state->inring)
+#define OUTTAIL (state->outtail)
+#define OUTHEAD (state->outhead)
+#define INHEAD (state->inhead)
+#define INTAIL (state->intail)
+#define OUTTAILVAL OUTRING[OUTTAIL]
+#define OUTHEADVAL OUTRING[OUTHEAD]
+#define INTAILVAL INRING[INTAIL]
+#define INHEADVAL INRING[INHEAD]
+
 // linked list of e1000 devices
 // static global var to this only file
 static struct list_head dev_list;
 // transmitting buffer
-static struct e1000_dev *dev;
+static struct e1000_dev *dev = NULL;
 
 int my_packet[16] = {0xdeadbeef,0xbeefdead,};
     
@@ -88,6 +100,11 @@ static int e1000_init_single_rxd(int index, struct e1000_state *state){
 // another buffer for DMA space 
 static int e1000_init_receive_ring(int blocksize, int blockcount, struct e1000_state *state)
 {
+  INRING = (struct e1000_in_packet *)malloc(sizeof(struct e1000_out_packet)*blockcount);
+  if (!INRING) {
+    ERROR("Cannot allocate tx buffer\n");
+    return -1;
+  }
   RXD_RING = malloc(sizeof(struct e1000_ring));
   if (!RXD_RING) {
     ERROR("Cannot allocate rx buffer\n");
@@ -149,13 +166,18 @@ static int e1000_init_receive_ring(int blocksize, int blockcount, struct e1000_s
 // initialize ring buffer to hold transmit descriptors 
 static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e1000_state *state)
 {
+  OUTRING = (struct e1000_out_packet *)malloc(sizeof(struct e1000_out_packet)*tx_dsc_count);
+  if (!OUTRING) {
+    ERROR("Cannot allocate tx buffer\n");
+    return -1;
+  }
+  memset(TXD_RING, 0, sizeof(struct e1000_ring));
   TXD_RING = malloc(sizeof(struct e1000_ring));
   if (!TXD_RING) {
     ERROR("Cannot allocate tx buffer\n");
     return -1;
   }
   memset(TXD_RING, 0, sizeof(struct e1000_ring));
-  TXD_RING->tail_pos = 0;
   
   int td_buff_size = sizeof(struct e1000_tx_desc)*tx_dsc_count;
   // allocate transmit descriptor list ring buffer for 64kB.
@@ -258,7 +280,9 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size, struct e10
   return 0;
 }
 
-static void* e1000_receive_packet(uint64_t* dst_addr, int dst_size, struct e1000_state *state) {
+static void* e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct e1000_state *state) {
+  // TODO we're careless about the dst_size; there should probably be some kind of check to make
+  // sure we're not going past any bounds as we write
   int headpos;
   int consumed;
   int index = 0;
@@ -309,12 +333,13 @@ int e1000_get_characteristics(void *voidstate, struct nk_net_dev_characteristics
       c->mac[i]=((uint8_t*)(&(state->mac_addr)))[i];
   }
   // min_tu the minimum pkt size to tx
-  c->min_tu = 48;
+  c->min_tu = 48; // the device documentation seemed to imply a number like this
   c->max_tu = 1522; // TODO we just picked this value out of the air; probably should find the real value
   return 0; //succeeds
 }
 
-int e1000_interupt_handler() {
+int e1000_interupt_handler() { 
+  // TODO ????
   // 1. figure which e1000 -> this gives the e1000 state
   // 2. figure why the interrupt error rx tx
   // 3. assume tx
@@ -324,8 +349,10 @@ int e1000_interupt_handler() {
   // 6. run callback(context);
   return 0;
 }
-int e1000_post_send(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
-  struct e1000_state *e=(struct e1000_state*)state;
+int e1000_post_send(void *voidstate, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
+  struct e1000_state *state=(struct e1000_state*)voidstate;
+  // TODO (we don't do any queueing because we didn't do interrupts; we just try to send right away
+  // and then do a callback when the send is done)
   // start the tx
   // check len < max_tu if no, return -1
   // queue full return -1
@@ -337,15 +364,27 @@ int e1000_post_send(void *state, uint8_t *src, uint64_t len, void (*callback)(vo
   // and context (struct ...) [] -> callback and context
   // ring desc [ ] [ ] [ ]
   // array     [ ] [ ] [ ]
+
+
+
+  e1000_send_packet(src, (uint16_t)len, state);
+
+  (*callback)(context);
+
   return 0; //succeeds
 }
-int e1000_post_receive(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
+int e1000_post_receive(void *voidstate, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
+  struct e1000_state *state=(struct e1000_state*)voidstate;
+  // TODO (we don't do any queueing because we didn't do interrupts; we just try to send right away
+  // and then do a callback when the send is done)
   // start the tx
   // 1. create the descriptor based on src (pkt address), len (length of the pkt)
   // 2. queue the descriptor in the hw and record the pos of the descriptor of
   // the ring
   // 3. put the data structure to map the pos in the ring from 2. to
   // callback and context
+  e1000_receive_packet((uint64_t *)src, len, state);
+  (*callback)(context);
   return 0;
 }
 
@@ -511,6 +550,11 @@ int e1000_pci_init(struct naut_info * naut)
         }
       }      
     }
+  }
+
+  if(!dev) {
+    INFO("cannot find the e1000 device");
+    return 0;
   }
   // need to init each e1000
   e1000_init_transmit_ring(TX_BLOCKSIZE, TX_DSC_COUNT, state);

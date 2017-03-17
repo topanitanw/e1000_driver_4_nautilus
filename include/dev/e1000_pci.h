@@ -66,6 +66,7 @@
    (for example, to allow buffer sizes to reflect mem availabilty)
 */
 #define TX_DSC_COUNT 128
+#define TX_BLOCKSIZE 256 // bytes available per DMA block
 #define RX_DSC_COUNT 64 // equal to DMA block count
 #define RX_BLOCKSIZE 256 // bytes available per DMA block
 
@@ -89,10 +90,13 @@ struct e1000_dev {
   uint64_t  mem_end;
 };
 
-struct e1000_rx_ring {
+struct e1000_ring {
   volatile void     *ring_buffer;
   volatile uint8_t  head_prev;
   volatile uint8_t  tail_pos;
+  int count;
+  void *packet_buffer;
+  int blocksize;
 };
 
 struct e1000_rx_desc {
@@ -128,11 +132,24 @@ struct e1000_tx_desc {
     uint8_t vle : 1;
     uint8_t ide : 1;
   } cmd;
-  volatile uint8_t status:4;
-  volatile uint8_t rsvd2:4;
+  volatile struct {
+    uint8_t dd    : 1;
+    uint8_t ec    : 1;
+    uint8_t lc    : 1;
+    uint8_t rsvtu : 1;
+    uint8_t rsvd2 : 4;
+  } status;
   volatile uint8_t css;
   volatile uint16_t special;
 } __attribute__((packed)); 
+
+struct e1000_state {
+    volatile struct e1000_ring *rx_ring;
+    volatile struct e1000_ring *tx_ring;
+    char name[DEV_NAME_LEN];
+    struct e1000_dev *dev;
+    uint64_t mac_addr;
+};
 
 // function declaration
 int e1000_pci_init(struct naut_info * naut);

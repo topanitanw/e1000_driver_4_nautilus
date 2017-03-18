@@ -10,7 +10,7 @@
  * http://www.v3vee.org  and
  * http://xtack.sandia.gov/hobbes
  *
- * Copyright (c) 2017, Panitan Wongse-ammat <Panitan.W@u.northwesttern.edu>
+ * Copyright (c) 2017, E1000 Netdev <Panitan.W@u.northwesttern.edu>
  * Copyright (c) 2017, The V3VEE Project  <http://www.v3vee.org> 
  *                     The Hobbes Project <http://xstack.sandia.gov/hobbes>
  * All rights reserved.
@@ -31,10 +31,12 @@
 #include <nautilus/printk.h>
 #include <dev/pci.h>
 #include <dev/e1000_pci.h>
+#include <nautilus/arp.h>
 // #include <arpa/inet.h>          // inet_aton, inet_ntoa, inet_ntop
 // #include <stdlib.h>
 // #include <stdio.h>
 
+#define NAUT_CONFIG_DEBUG_ARP 1
 #ifndef NAUT_CONFIG_DEBUG_ARP
 #undef DEBUG_PRINT
 #define DEBUG_PRINT(fmt, args...)
@@ -44,39 +46,7 @@
 #define DEBUG(fmt, args...) DEBUG_PRINT("ARP DEBUG: " fmt, ##args)
 #define ERROR(fmt, args...) ERROR_PRINT("ARP ERROR: " fmt, ##args)
 
-#define IPV4_LEN                  4              /* length of ipv4 in bytes */
-#define MAC_LEN                   6              /* length of mac address in bytes */
-#define ARP_ETHERNET_HW_TYPE      1
-#define ARP_IP_PRO_TYPE           0x800
-#define ARP_REQUEST_OPCODE        0x0001
-#define ARP_REPLY_OPCODE          0x0002d
-#define IP_ADDRESS_STRING         "10.10.10.3"
-
-const uint8_t ARP_BROADCACST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-/* enum hardware_type { reserved, ethernet }; */
-/* enum opcode { reserved, request, reply }; */
-struct e1000_state {
-  struct nk_net_dev *netdev;
-};
-
-struct arp_packet {
-  volatile uint16_t hw_type;                    /* hardware address */
-  volatile uint16_t pro_type;                   /* protocol address */
-  volatile uint8_t hw_len;                      /* hardware address length */
-  volatile uint8_t pro_len;                     /* protocol address length */
-  volatile uint16_t opcode;                     /* arp opcode */
-  volatile uint8_t sender_hw_addr[MAC_LEN];     /* sender hardware address */
-  volatile uint32_t sender_ip_addr;             /* sender protocol address */
-  volatile uint8_t target_hw_addr[MAC_LEN];     /* target hardware address */
-  volatile uint32_t target_ip_addr;             /* target protocol address */
-} __attribute__((packed));
-
-struct arp_info {
-  struct nk_net_dev *netdev;
-  uint32_t ip_addr;
-};
-
-static struct e1000_state e1000_0_state;
+const uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 int compare_mac(uint8_t* mac1, uint8_t* mac2) {
   return ((mac1[0] == mac2[0]) && (mac1[1] == mac2[1]) && \
@@ -134,7 +104,7 @@ void print_arp_packet(struct arp_packet* pkt) {
       DEBUG("\t hw_type =%d : UNKNOWN\n", pkt->hw_type);
   }
 
-  DEBUG("\t pro_type =%d ; IP: %d\n",  pkt->pro_type, IP_PRO_TYPE);
+  DEBUG("\t pro_type =%d ; IP: %d\n",  pkt->pro_type, ARP_IP_PRO_TYPE);
   DEBUG("\t hw_len =%d; pro_len =%d\n; IP: %d",  pkt->hw_len, pkt->pro_len);
 
   switch(pkt->opcode) {
@@ -163,14 +133,16 @@ void print_arp_packet(struct arp_packet* pkt) {
 }
 
 void arp_thread(void *in, void **out) {
+  DEBUG("|arp_thread function ------------------------------|");
   struct arp_info * ai = (struct arp_info *)in;
   struct nk_net_dev_characteristics c;
+  DEBUG("|get_characteristics function ------------------------------|");  
   nk_net_dev_get_characteristics(ai->netdev, &c);
   // now you have the MAC address in c
   // and the ip address in ai, so we have the binding once again
 
   uint8_t input_packet[c.max_tu];
-  DEBUG("arp_thread function ------------------------------");
+  DEBUG("arp_thread before while ------------------------------");
   while (1) { 
     // wait to receive a packet - should check errors
     DEBUG("arp_thread while loop ------------------------------");
@@ -178,8 +150,9 @@ void arp_thread(void *in, void **out) {
     struct arp_packet *ip_pkt = (struct arp_packet*) input_packet;
     print_arp_packet(ip_pkt);
     // if(input packet is an ARP packet and its a request && it matches ai->ip_addr)
-    if ((compare_mac(ip_pkt->target_hw_addr, ARP_BROADCACST_MAC) ||
-         compare_mac(ip_pkt->target_hw_addr, c.mac)) &&
+    if ((compare_mac((uint8_t *) ip_pkt->target_hw_addr,
+                     (uint8_t *) ARP_BROADCAST_MAC) ||
+         compare_mac((uint8_t *) ip_pkt->target_hw_addr, c.mac)) &&
         (ip_pkt->opcode == ARP_REQUEST_OPCODE) &&
         (ip_pkt->target_ip_addr == ai->ip_addr)) {    
       uint8_t output_packet[c.max_tu];
@@ -187,7 +160,8 @@ void arp_thread(void *in, void **out) {
       struct arp_packet *op_pkt = (struct arp_packet*) output_packet;
       create_arp_pkt(op_pkt, ARP_REPLY_OPCODE,
                      ai->ip_addr, c.mac, 
-                     ip_pkt->sender_ip_addr, ip_pkt->sender_hw_addr);
+                     (uint32_t) ip_pkt->sender_ip_addr,
+                     (uint8_t *) ip_pkt->sender_hw_addr);
       print_arp_packet(op_pkt);
       nk_net_dev_send_packet(ai->netdev, output_packet,
                              sizeof(struct arp_packet),
@@ -198,24 +172,34 @@ void arp_thread(void *in, void **out) {
 
 int arp_init(struct naut_info * naut)
 {
-  INFO("\n\n\n arp init ------------------------------\n");
+  INFO("arp init ========================================\n");
   nk_thread_id_t tid;
-  e1000_pci_init(naut);
+  // e1000_pci_init(naut);
   // intiialize e1000, register it as, say, "e1000-0"
   // e1000_state->netdev = nk_netdev_register("e1000-0", 0, );
-  e1000_0_state.netdev = nk_net_dev_find("e1000-0");
+  // e1000_0_state.netdev = nk_net_dev_find("e1000-0");
   struct arp_info *ai = malloc(sizeof(*ai));
-  ai->netdev = e1000_0_state.netdev;   // store device to IP binding
+  if (!ai) {
+    ERROR("Cannot allocate ai arp_info\n");
+    return -1;
+  }  
+  //ai->netdev = e1000_0_state.netdev;   // store device to IP binding
+  ai->netdev = nk_net_dev_find("e1000-0");
+  DEBUG("ip_strtoint ========================================\n");
   ai->ip_addr = ip_strtoint(IP_ADDRESS_STRING);
-  DEBUG("ip address string: %s, ip address uint32_t: %d, ip address string: %s\n",
-        IP_ADDRESS_STRING, ai->ip_addr, ip_inttostr(ip_addr));
-  // keep the ip address in network byte order
-  if (nk_thread_start(arp_thread, (void*)ai , NULL, 1, PAGE_SIZE_4KB, &tid, -1)) { 
+  char buf[20];
+  memset(buf,0, 20);
+  DEBUG("ip address string: %s, ip address uint32_t: 0x%08x, ip address string: \n",
+        IP_ADDRESS_STRING, ai->ip_addr);//, ip_inttostr(ai->ip_addr, buf, 20));
+  /* // keep the ip address in network byte order */
+  DEBUG("nk_thread_start ========================================\n");  
+  if (nk_thread_start(arp_thread, (void*)ai , NULL, 1, PAGE_SIZE_4KB, &tid, 1)) {
     free(ai);
     return -1;
   } else {
     return 0;
-  }  
+  }
+  // return 0;
 }
 
 int arp_deinit()

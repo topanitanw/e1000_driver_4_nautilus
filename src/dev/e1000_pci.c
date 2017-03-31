@@ -60,7 +60,7 @@ static struct list_head dev_list;
 // transmitting buffer
 static struct e1000_dev *dev = NULL;
 
-int my_packet[16] = {0xdeadbeef,0xbeefdead,};
+int my_packet[16] = {0xdeadbeef,0xbeefdead, 0x12345678, 0x87654321, };
     
 /*
   Description of Receive process

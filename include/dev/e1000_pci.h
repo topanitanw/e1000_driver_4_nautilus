@@ -2,8 +2,11 @@
 #define __E1000_PCI
 
 // REGISTER OFFSETS ************************************
-#define RAL_OFFSET      0x5400 // receive address (64b)
-#define RAH_OFFSET      0x5404 //  
+#define E1000_CTRL_OFFSET     0x00000  /* Device Control - RW */
+#define E1000_STATUS_OFFSET   0x00008  /* Device Status - RO */
+
+#define E1000_RAL_OFFSET      0x5400 // receive address (64b)
+#define E1000_RAH_OFFSET      0x5404 //  
 
 #define RDBAL_OFFSET    0x2800 // receive descriptor list address (64b)
 #define RDBAH_OFFSET    0x2804
@@ -13,8 +16,8 @@
 #define RCTL_OFFSET     0x0100 // receive control
 #define RDTR_OFFSET     0x2820 // receive delay timer
 
-#define TPT_OFFSET      0x40D4 // total package transmit
-#define TPR_OFFSET      0x40D0 // total packagte receive
+#define E1000_TPT_OFFSET      0x40D4 // total package transmit
+#define E1000_TPR_OFFSET      0x40D0 // total packagte receive
 #define TDBAL_OFFSET    0x3800 // transmit descriptor list address (64b)
 #define TDBAH_OFFSET    0x3804 
 #define TDLEN_OFFSET    0x3808 // transmit descriptor list length
@@ -24,8 +27,8 @@
 #define TIPG_OFFSET     0x0410 // transmit interpacket gap
 
 // PCI CONFIG SPACE ************************************
-#define VENDOR_ID 0x8086
-#define DEVICE_ID 0x100E
+#define INTEL_VENDOR_ID 0x8086
+#define E1000_DEVICE_ID 0x100E
 
 
 // REGISTER BIT MASKS **********************************
@@ -67,7 +70,7 @@
 */
 #define TX_DSC_COUNT 128
 #define TX_BLOCKSIZE 256 // bytes available per DMA block
-#define RX_DSC_COUNT 64 // equal to DMA block count
+#define RX_DSC_COUNT 64  // equal to DMA block count
 #define RX_BLOCKSIZE 256 // bytes available per DMA block
 
 // new type declaration
@@ -172,7 +175,6 @@ struct e1000_state {
     uint64_t intail;
     
 };
-
 
 // function declaration
 int e1000_pci_init(struct naut_info * naut);

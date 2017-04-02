@@ -371,10 +371,14 @@ int e1000_post_send(void *voidstate, uint8_t *src, uint64_t len, void (*callback
   // ring desc [ ] [ ] [ ]
   // array     [ ] [ ] [ ]
 
+  DEBUG("e1000_post_send calling e1000_send_packet --------------\n");
   e1000_send_packet(src, (uint16_t)len, state);
-
+  /* DEBUG("e1000_post_send returning from e1000_send_packet -------\n");   */
+  /* DEBUG("e1000_post_send calling (*callback)(context) -----------\n"); */
+  /* DEBUG("callback 0x%p context 0x%p context = %d\n", */
+  /*       callback, context, *(uint64_t*)context); */
   (*callback)(context);
-
+  DEBUG("e1000_post_send returning (*callback)(context) ---------\n");
   return 0; //succeeds
 }
 int e1000_post_receive(void *voidstate, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){

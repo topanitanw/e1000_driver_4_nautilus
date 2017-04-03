@@ -10,7 +10,7 @@
 #define ARP_HW_TYPE_ETHERNET      1              /* arp hardware type for ethernet */
 #define ARP_PRO_TYPE_IPV4         0x0800         /* arp protocol type for ipv4 */
 #define ARP_OPCODE_REQUEST        0x0001         /* arp opcode request */
-#define ARP_OPCODE_REPLY          0x0002d        /* arp opcode reply */
+#define ARP_OPCODE_REPLY          0x0002         /* arp opcode reply */
 
 // ethernet frame
 #define ETHERNET_TYPE_ARP         0x0806         /* ethernet type arp */

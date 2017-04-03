@@ -65,12 +65,14 @@ int my_packet[16] = {0xdeadbeef,0xbeefdead, 0x12345678, 0x87654321, };
   Description of Receive process
 
   1) recieve descriptor must fit inside of the ring of 1024 (arbritary)
-	however, all of these recieve have headers are headers that point to blocks of memory
-  (where the device is going to automatically store the incoming data from packets)
-  The number of recieve descriptors is set by the size (16 receive descriptors can fit in 1k)
-  The ring is an array of receive descriptors (the address part consumes 8 bytes of each recieve descriptor)
-  (other 8 bytes are about the status and size, etc..., [and device will change this])	
-	The receive buffer is an array of blocks that the recieve descriptors are pointing too
+	however, all of these recieve have headers are headers that point to
+	blocks of memory (where the device is going to automatically store the
+	incoming data from packets) The number of recieve descriptors is set
+  by the size (16 receive descriptors can fit in 1k) The ring is an array
+  of receive descriptors (the address part consumes 8 bytes of each recieve
+  descriptor) (other 8 bytes are about the status and size, etc...,
+  [and device will change this]) The receive buffer is an array of blocks
+  that the recieve descriptors are pointing too
 */	
 
 
@@ -227,7 +229,8 @@ static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e100
   return 0;
 }
 
-static int e1000_send_packet(void* packet_addr, uint16_t packet_size, struct e1000_state *state){
+static int e1000_send_packet(void* packet_addr, uint16_t packet_size,
+                             struct e1000_state *state){
   uint16_t remaining_bytes = packet_size;
   uint64_t unresolved = 0;
   uint64_t oldest = TXD_TAIL;
@@ -263,7 +266,14 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size, struct e10
       TXD_CMD(TXD_TAIL).dext = 0;
       TXD_CMD(TXD_TAIL).vle = 0;
       // set the end of packet flag if this is the last fragment
-      TXD_CMD(TXD_TAIL).eop = !(remaining_bytes);
+      if(remaining_bytes <= 0) {
+        TXD_CMD(TXD_TAIL).ifcs = 1;
+        TXD_CMD(TXD_TAIL).eop = 1;
+      } else {
+        TXD_CMD(TXD_TAIL).ifcs = 0;
+        TXD_CMD(TXD_TAIL).eop = 0;        
+      }
+      
       TXD_CMD(TXD_TAIL).ifcs = 1;
       TXD_CMD(TXD_TAIL).rs = 1;
       TXD_LENGTH(TXD_TAIL) = i;
@@ -276,10 +286,10 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size, struct e10
       TXD_TAIL = NEXT_TXD;
       DEBUG("TDH=%d\n", READ(state->dev, TDH_OFFSET));
       DEBUG("TDT=%d\n", READ(state->dev, TDT_OFFSET));
-      DEBUG("e1000 status=0x%x\n", READ(state->dev, 0x8));
+      DEBUG("e1000 status=0x%x\n", READ(state->dev, E1000_STATUS_OFFSET));
     }
   }
-  DEBUG("DONE SENDING-----------------------");
+  DEBUG("DONE SENT -----------------------\n");
   return 0;
 }
 static void* e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct e1000_state *state) {

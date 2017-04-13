@@ -34,9 +34,9 @@ struct arp_packet {
   uint8_t hw_len;                      /* hardware address length */
   uint8_t pro_len;                     /* protocol address length */
   uint16_t opcode;                     /* arp operation */
-  uint8_t sender_mac[MAC_LEN];     /* sender hardware address */
+  uint8_t sender_mac[MAC_LEN];         /* sender hardware address */
   uint32_t sender_ip_addr;             /* sender protocol address */
-  uint8_t target_mac[MAC_LEN];     /* target hardware address */
+  uint8_t target_mac[MAC_LEN];         /* target hardware address */
   uint32_t target_ip_addr;             /* target protocol address */
 } __attribute__((packed));
 

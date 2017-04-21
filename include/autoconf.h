@@ -1,7 +1,7 @@
 /*
  * Automatically generated C config: don't edit
  * Nautilus version: 
- * Fri Mar 31 12:25:09 2017
+ * Thu Apr 20 02:41:19 2017
  */
 #define AUTOCONF_INCLUDED
 
@@ -105,7 +105,7 @@
 #undef NAUT_CONFIG_APIC_FORCE_XAPIC_MODE
 #undef NAUT_CONFIG_APIC_TIMER_CALIBRATE_INDEPENDENTLY
 #undef NAUT_CONFIG_DEBUG_APIC
-#undef NAUT_CONFIG_DEBUG_IOAPIC
+#define NAUT_CONFIG_DEBUG_IOAPIC 1
 #undef NAUT_CONFIG_DEBUG_PCI
 #undef NAUT_CONFIG_DEBUG_KBD
 #undef NAUT_CONFIG_DEBUG_PIT

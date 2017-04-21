@@ -3,6 +3,7 @@
 #include <nautilus/cpu.h> // warrior
 #include <dev/pci.h>
 #include <dev/e1000_pci.h>
+#include <nautilus/irq.h> //irq
 
 #ifndef NAUT_CONFIG_DEBUG_E1000_PCI
 #undef DEBUG_PRINT
@@ -56,6 +57,8 @@
 #define INTAILVAL INRING[INTAIL]
 #define INHEADVAL INRING[INHEAD]
 
+#define IRQ        11
+    
 // transmitting buffer
 static struct e1000_dev *dev = NULL;
 
@@ -343,6 +346,7 @@ static void* e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct 
   }
   return (void*)0;
 }
+
 int e1000_get_characteristics(void *voidstate, struct nk_net_dev_characteristics *c) {
   struct e1000_state *state=(struct e1000_state*)voidstate;
   for(int i=0; i<6; i++){
@@ -367,8 +371,8 @@ int e1000_interupt_handler() {
 }
 int e1000_post_send(void *voidstate, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
   struct e1000_state *state=(struct e1000_state*)voidstate;
-  // TODO (we don't do any queueing because we didn't do interrupts; we just try to send right away
-  // and then do a callback when the send is done)
+  // TODO (we don't do any queueing because we didn't do interrupts; we just try to
+  // send right away and then do a callback when the send is done)
   // start the tx
   // check len < max_tu if no, return -1
   // queue full return -1
@@ -403,6 +407,16 @@ int e1000_post_receive(void *voidstate, uint8_t *src, uint64_t len, void (*callb
   // callback and context
   e1000_receive_packet((uint64_t *)src, len, state);
   (*callback)(context);
+  return 0;
+}
+
+
+
+static int 
+e1000_handler (excp_entry_t * excp, excp_vec_t vec)
+{
+  DEBUG("e1000_handler vector: 0x%x rip: %p\n", vec, excp->rip);
+  IRQ_HANDLER_END();
   return 0;
 }
 
@@ -446,7 +460,8 @@ int e1000_pci_init(struct naut_info * naut)
       if (cfg->vendor_id==INTEL_VENDOR_ID && cfg->device_id==E1000_DEVICE_ID) {
         DEBUG("E1000 Device Found\n");
         // struct e1000_dev *dev;
-  
+        DEBUG("E1000 class code 0x%02x subclass 0x%02x prog_if 0x%02x\n",
+              cfg->class_code, cfg->subclass, cfg->prog_if);
         dev = malloc(sizeof(struct e1000_dev));
         if (!dev) {
           ERROR("Cannot allocate device\n");
@@ -569,9 +584,31 @@ int e1000_pci_init(struct naut_info * naut)
     INFO("cannot find the e1000 device");
     return 0;
   }
+
+  register_irq_handler(IRQ, e1000_handler, NULL);
+  nk_unmask_irq(IRQ);
   
+  uint32_t status = 0;
+  WRITE_MEM(state->dev, E1000_TXDCTL_OFFSET, (0 << 25));
+  WRITE_MEM(state->dev, E1000_RSRPD_OFFSET, 500);
+  status = READ(state->dev, E1000_RSRPD_OFFSET);
+  DEBUG("RSRPD: %d\n", status);
+  WRITE_MEM(state->dev, E1000_ICS_OFFSET, E1000_ICR_SRPD);
+            // E1000_ICR_TXQE | E1000_ICR_TXD_LOW);
+  WRITE_MEM(state->dev, E1000_IMS_OFFSET,
+            E1000_ICR_TXQE | E1000_ICR_TXD_LOW | E1000_ICR_SRPD);
+  status = READ_MEM(state->dev, E1000_STATUS_OFFSET);
+  DEBUG("*** e1000 status = 0x%x\n", status);
+  status = READ_MEM(state->dev, E1000_ICR_OFFSET);
+  DEBUG("*** e1000 ICR = 0x%08x TXQE 0x%08x\n", status, E1000_ICR_TXQE & status);
+  DEBUG("*** e1000 ICR = 0x%08x TXD_LOW 0x%08x\n", status, E1000_ICR_TXD_LOW & status);
   // need to init each e1000
   e1000_init_transmit_ring(TX_BLOCKSIZE, TX_DSC_COUNT, state);
+  status = READ_MEM(state->dev, E1000_STATUS_OFFSET);
+  DEBUG("*** e1000 status = 0x%x\n", status);
+  status = READ_MEM(state->dev, E1000_ICR_OFFSET);
+  DEBUG("*** e1000 ICR = 0x%08x TXQE 0x%08x\n", status, E1000_ICR_TXQE & status);
+  DEBUG("*** e1000 ICR = 0x%08x TXD_LOW 0x%08x\n", status, E1000_ICR_TXD_LOW & status);
   e1000_init_receive_ring(RX_BLOCKSIZE, RX_DSC_COUNT, state);
   // ***************** INIT IS COMPLETE ************************* //
   
@@ -581,8 +618,9 @@ int e1000_pci_init(struct naut_info * naut)
   uint64_t* my_rcv_space = malloc(8*1024);
   DEBUG("receiving a packet\n");
   e1000_receive_packet(my_rcv_space, 8*1024, state);
-  DEBUG("receiving a packet\n");
   e1000_receive_packet(my_rcv_space, 8*1024, state);
+  status = READ_MEM(state->dev, E1000_ICR_OFFSET);  
+  DEBUG("*** e1000 ICR = 0x%08x SRPD 0x%08x\n", status, E1000_ICR_SRPD & status);
   //e1000_receive_packet(my_rcv_space, 8*1024, state);
   for(int j=0; j<42; j++)
   {
@@ -602,4 +640,3 @@ int e1000_pci_deinit()
   INFO("deinited\n");
   return 0;
 }
-

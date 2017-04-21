@@ -2,33 +2,40 @@
 #define __E1000_PCI
 
 // REGISTER OFFSETS ************************************
-#define E1000_CTRL_OFFSET     0x00000  /* Device Control - RW */
-#define E1000_STATUS_OFFSET   0x00008  /* Device Status - RO */
+#define E1000_RAL_OFFSET      0x5400   // receive address (64b)
+#define E1000_RAH_OFFSET      0x5404   //  
 
-#define E1000_RAL_OFFSET      0x5400 // receive address (64b)
-#define E1000_RAH_OFFSET      0x5404 //  
+#define RDBAL_OFFSET          0x2800   // receive descriptor list address (64b)
+#define RDBAH_OFFSET          0x2804
+#define RDLEN_OFFSET          0x2808   // receive descriptor list length
+#define RDH_OFFSET            0x2810   // receive descriptor head
+#define RDT_OFFSET            0x2818   // receive descriptor tail
+#define RCTL_OFFSET           0x0100   // receive control
+#define RDTR_OFFSET           0x2820   // receive delay timer
+#define E1000_RSRPD_OFFSET    0x02C00  // receive small packet detect interrupt r/w
 
-#define RDBAL_OFFSET    0x2800 // receive descriptor list address (64b)
-#define RDBAH_OFFSET    0x2804
-#define RDLEN_OFFSET    0x2808 // receive descriptor list length
-#define RDH_OFFSET      0x2810 // receive descriptor head
-#define RDT_OFFSET      0x2818 // receive descriptor tail
-#define RCTL_OFFSET     0x0100 // receive control
-#define RDTR_OFFSET     0x2820 // receive delay timer
+#define E1000_TPT_OFFSET      0x40D4   // total package transmit
+#define E1000_TPR_OFFSET      0x40D0   // total packagte receive
+#define TDBAL_OFFSET          0x3800   // transmit descriptor list address (64b)
+#define TDBAH_OFFSET          0x3804 
+#define TDLEN_OFFSET          0x3808   // transmit descriptor list length
+#define TDH_OFFSET            0x3810   // transmit descriptor head
+#define TDT_OFFSET            0x3818   // transmit descriptor tail
+#define TCTL_OFFSET           0x0400   // transmit control
+#define TIPG_OFFSET           0x0410   // transmit interpacket gap
+#define E1000_TXDCTL_OFFSET   0x03828  // transmit descriptor control r/w
 
-#define E1000_TPT_OFFSET      0x40D4 // total package transmit
-#define E1000_TPR_OFFSET      0x40D0 // total packagte receive
-#define TDBAL_OFFSET    0x3800 // transmit descriptor list address (64b)
-#define TDBAH_OFFSET    0x3804 
-#define TDLEN_OFFSET    0x3808 // transmit descriptor list length
-#define TDH_OFFSET      0x3810 // transmit descriptor head
-#define TDT_OFFSET      0x3818 // transmit descriptor tail
-#define TCTL_OFFSET     0x0400 // transmit control
-#define TIPG_OFFSET     0x0410 // transmit interpacket gap
+// 4 interrupt register offset
+#define E1000_ICR_OFFSET      0x000C0  /* interrupt cause read register */
+#define E1000_ICS_OFFSET      0x000C8  /* interrupt cause set register */
+#define E1000_IMS_OFFSET      0x000D0  /* interrupt mask set/read register */
+#define E1000_IMC_OFFSET      0x000D8  /* interrupt mask clear */
 
 // PCI CONFIG SPACE ************************************
-#define INTEL_VENDOR_ID 0x8086
-#define E1000_DEVICE_ID 0x100E
+#define INTEL_VENDOR_ID       0x8086
+#define E1000_DEVICE_ID       0x100E
+#define E1000_CTRL_OFFSET     0x00000  /* Device Control - RW */
+#define E1000_STATUS_OFFSET   0x00008  /* Device Status - RO */
 
 
 // REGISTER BIT MASKS **********************************
@@ -64,11 +71,17 @@
 #define RCTL_BSIZE_8192                 ((2 << 16) | (1 << 25))
 #define RCTL_BSIZE_16384                ((1 << 16) | (1 << 25))
 
+
+// interrupt bits of icr register
+#define E1000_ICR_TXQE        (1 << 1)
+#define E1000_ICR_TXD_LOW     (1 << 15)
+#define E1000_ICR_SRPD        (1 << 16)
+
 // VARIABLE CONSTANTS *************************************
 /* these may need to dynamically change for different machines
    (for example, to allow buffer sizes to reflect mem availabilty)
 */
-#define TX_DSC_COUNT 128
+#define TX_DSC_COUNT 2
 #define TX_BLOCKSIZE 256 // bytes available per DMA block
 #define RX_DSC_COUNT 64  // equal to DMA block count
 #define RX_BLOCKSIZE 256 // bytes available per DMA block
@@ -83,11 +96,9 @@ struct e1000_dev {
   // pci interrupt and interupt vector
   uint8_t   pci_intr;  // number on bus
   uint8_t   intr_vec;  // number we will see
-
   // Where registers are mapped into the I/O address space
   uint16_t  ioport_start;
   uint16_t  ioport_end;  
-
   // Where registers are mapped into the physical memory address space
   uint64_t  mem_start;
   uint64_t  mem_end;
@@ -147,18 +158,18 @@ struct e1000_tx_desc {
 } __attribute__((packed)); 
 
 struct e1000_in_packet {
-    uint8_t *src_addr;
-    uint8_t dst_mac[6];
-    void    *callback;
-    void    *context;
+  uint8_t *src_addr;
+  uint8_t dst_mac[6];
+  void    *callback;
+  void    *context;
 };
 
 struct e1000_out_packet {
-    uint8_t *src_addr;
-    uint8_t dst_mac[6];
-    uint64_t size;
-    void    *callback;
-    void    *context;
+  uint8_t *src_addr;
+  uint8_t dst_mac[6];
+  uint64_t size;
+  void    *callback;
+  void    *context;
 };
 
 struct e1000_state {

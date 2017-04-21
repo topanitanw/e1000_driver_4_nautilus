@@ -319,6 +319,12 @@ __ioapic_init (struct ioapic * ioapic, uint8_t ioapic_id)
     nk_unmask_irq(1); // keyboard
 #endif
 
+    IOAPIC_DEBUG("E1000 ioapic\n");    
+    /* for(int i = 16; i < 25; i++) { */
+    /*   nk_unmask_irq(i); // e1000 */
+    /* } */
+    // nk_unmask_irq(10); // E1000
+    /* nk_unmask_irq(11); // E1000 uncomment this line */
     ioapic_dump(ioapic);
 
     return 0;

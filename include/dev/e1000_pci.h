@@ -1,3 +1,30 @@
+/* 
+ * This file is part of the Nautilus AeroKernel developed
+ * by the Hobbes and V3VEE Projects with funding from the 
+ * United States National  Science Foundation and the Department of Energy.  
+ *
+ * The V3VEE Project is a joint project between Northwestern University
+ * and the University of New Mexico.  The Hobbes Project is a collaboration
+ * led by Sandia National Laboratories that includes several national 
+ * laboratories and universities. You can find out more at:
+ * http://www.v3vee.org  and
+ * http://xtack.sandia.gov/hobbes
+ *
+ * Copyright (c) 2017, Panitan Wongse-ammat, Marc Warrior, Galen Lansbury 
+ * Copyright (c) 2017, Peter Dinda
+ * Copyright (c) 2017, The V3VEE Project  <http://www.v3vee.org> 
+ *                     The Hobbes Project <http://xstack.sandia.gov/hobbes>
+ * All rights reserved.
+ *
+ * Authors: Panitan Wongse-ammat <Panitan.W@u.northwesttern.edu>
+ *          Marc Warrior <warrior@u.northwestern.edu>
+ *          Galen Lansbury <galenlansbury2017@u.northwestern.edu>
+ *          Peter Dinda <pdinda@northwestern.edu>
+ *
+ * This is free software.  You are permitted to use,
+ * redistribute, and modify it as specified in the file "LICENSE.txt".
+ */
+
 #ifndef __E1000_PCI
 #define __E1000_PCI
 
@@ -81,7 +108,7 @@
 /* these may need to dynamically change for different machines
    (for example, to allow buffer sizes to reflect mem availabilty)
 */
-#define TX_DSC_COUNT 2
+#define TX_DSC_COUNT 64
 #define TX_BLOCKSIZE 256 // bytes available per DMA block
 #define RX_DSC_COUNT 64  // equal to DMA block count
 #define RX_BLOCKSIZE 256 // bytes available per DMA block
@@ -105,38 +132,38 @@ struct e1000_dev {
 };
 
 struct e1000_ring {
-  volatile void     *ring_buffer;
-  volatile uint8_t  head_prev;
-  volatile uint8_t  tail_pos;
+  void     *ring_buffer;
+  uint8_t  head_prev;
+  uint8_t  tail_pos;
   int count;
   void *packet_buffer;
   int blocksize;
 };
 
 struct e1000_rx_desc {
-  volatile uint64_t addr;
-  volatile uint16_t length;
-  volatile uint16_t checksum;
-  volatile struct {
-      uint8_t dd    : 1;
-      uint8_t eop   : 1;
-      uint8_t ixsm  : 1;
-      uint8_t vp    : 1;
-      uint8_t rsv   : 1;
-      uint8_t tcpcs : 1;
-      uint8_t ipcs  : 1;
-      uint8_t pif   : 1;
+  uint64_t addr;
+  uint16_t length;
+  uint16_t checksum;
+  struct {
+    uint8_t dd    : 1;
+    uint8_t eop   : 1;
+    uint8_t ixsm  : 1;
+    uint8_t vp    : 1;
+    uint8_t rsv   : 1;
+    uint8_t tcpcs : 1;
+    uint8_t ipcs  : 1;
+    uint8_t pif   : 1;
   } status;
-  volatile uint8_t errors;
-  volatile uint16_t special;
+  uint8_t errors;
+  uint16_t special;
 } __attribute__((packed));
 
 // legacy mode
 struct e1000_tx_desc {
-  volatile uint64_t addr;
-  volatile uint16_t length;
-  volatile uint8_t  cso;
-  volatile struct {
+  uint64_t addr;
+  uint16_t length;
+  uint8_t  cso;
+  struct {
     uint8_t eop : 1;
     uint8_t ifcs: 1;
     uint8_t ic  : 1;
@@ -146,15 +173,15 @@ struct e1000_tx_desc {
     uint8_t vle : 1;
     uint8_t ide : 1;
   } cmd;
-  volatile struct {
+  struct {
     uint8_t dd    : 1;
     uint8_t ec    : 1;
     uint8_t lc    : 1;
     uint8_t rsvtu : 1;
     uint8_t rsvd2 : 4;
   } status;
-  volatile uint8_t css;
-  volatile uint16_t special;
+  uint8_t css;
+  uint16_t special;
 } __attribute__((packed)); 
 
 struct e1000_in_packet {
@@ -173,17 +200,17 @@ struct e1000_out_packet {
 };
 
 struct e1000_state {
-    volatile struct e1000_ring *rx_ring;
-    volatile struct e1000_ring *tx_ring;
-    char name[DEV_NAME_LEN];
-    struct e1000_dev *dev;
-    uint64_t mac_addr;
-    struct e1000_out_packet *outring; // circular queue of outgoing packets
-    struct e1000_in_packet *inring; // circular queue of incoming packets
-    uint64_t outhead;
-    uint64_t outtail;
-    uint64_t inhead;
-    uint64_t intail;
+  struct e1000_ring *rx_ring;
+  struct e1000_ring *tx_ring;
+  char name[DEV_NAME_LEN];
+  struct e1000_dev *dev;
+  uint64_t mac_addr;
+  struct e1000_out_packet *outring; // circular queue of outgoing packets
+  struct e1000_in_packet *inring; // circular queue of incoming packets
+  uint64_t outhead;
+  uint64_t outtail;
+  uint64_t inhead;
+  uint64_t intail;
     
 };
 

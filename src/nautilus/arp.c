@@ -10,30 +10,30 @@
  * http://www.v3vee.org  and
  * http://xtack.sandia.gov/hobbes
  *
+ * Copyright (c) 2017, Panitan Wongse-ammat, Marc Warrior, Galen Lansbury 
+ * Copyright (c) 2017, Peter Dinda
  * Copyright (c) 2017, The V3VEE Project  <http://www.v3vee.org> 
  *                     The Hobbes Project <http://xstack.sandia.gov/hobbes>
  * All rights reserved.
  *
- * Author: Panitan Wongse-ammat <Panitan.W@u.northwesttern.edu>
- * Marc Warrior
- * Galen Lansbury
- * Peter Dinda
+ * Authors: Panitan Wongse-ammat <Panitan.W@u.northwesttern.edu>
+ *          Marc Warrior <warrior@u.northwestern.edu>
+ *          Galen Lansbury <galenlansbury2017@u.northwestern.edu>
+ *          Peter Dinda <pdinda@northwestern.edu>
  *
  * This is free software.  You are permitted to use,
  * redistribute, and modify it as specified in the file "LICENSE.txt".
  */
+
 #include <nautilus/nautilus.h>
-#include <nautilus/thread.h>    // nk_start_thread
-#include <nautilus/cpu.h>       // warrior
+#include <nautilus/thread.h>                  // nk_start_thread
+#include <nautilus/cpu.h>                     
 #include <nautilus/naut_string.h>             // memset, memcpy
 #include <nautilus/netdev.h>
 #include <nautilus/printk.h>
 #include <dev/pci.h>
 #include <dev/e1000_pci.h>
 #include <nautilus/arp.h>
-// #include <arpa/inet.h>          // inet_aton, inet_ntoa, inet_ntop
-// #include <stdlib.h>
-// #include <stdio.h>
 
 #define NAUT_CONFIG_DEBUG_ARP 1
 #ifndef NAUT_CONFIG_DEBUG_ARP
@@ -42,7 +42,7 @@
 #endif
 
 #define INFO(fmt, args...) INFO_PRINT("ARP INFO: " fmt, ##args)
-#define DEBUG(fmt, args...) DEBUG_PRINT("ARP DEBUG: " fmt, ##args)
+#define DEBUG(fmt, args...) DEBUG_PRINT("ARP: " fmt, ##args)
 #define ERROR(fmt, args...) ERROR_PRINT("ARP ERROR: " fmt, ##args)
 
 const uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
@@ -90,19 +90,17 @@ uint32_t ip_strtoint(char* str) {
 void ip_inttostr(uint32_t ipv4, char *buf, int len) {
   if(len < 16) return;
   uint8_t *ptr = (uint8_t*)&ipv4;
-  // printf("%u, %u, %u, %u : ", ptr[3], ptr[2], ptr[1], ptr[0]);
   sprintf(buf, "%hhu.%hhu.%hhu.%hhu", ptr[3], ptr[2], ptr[1], ptr[0]);
-  // printf("n: %u %s\n", n, buf);
 }
 
 void create_eth_header(struct eth_header *hdr, uint8_t *dst_mac,
                        uint8_t *src_mac, uint16_t ethtype) {
-  memcpy(hdr->dst_addr, dst_mac, MAC_LEN);
-  memcpy(hdr->src_addr, src_mac, MAC_LEN);
+  memcpy(hdr->dst_mac, dst_mac, MAC_LEN);
+  memcpy(hdr->src_mac, src_mac, MAC_LEN);
   hdr->eth_type = ethtype;
 }
 
-void create_arp_packet(struct arp_packet *pkt, uint16_t opcode,
+void create_arp_content(struct arp_packet *pkt, uint16_t opcode,
                        uint8_t *sender_mac, uint32_t sender_ip, 
                        uint8_t *target_mac, uint32_t target_ip) {
   pkt->hw_type = htons(ARP_HW_TYPE_ETHERNET);
@@ -124,10 +122,19 @@ void create_arp_packet(struct arp_packet *pkt, uint16_t opcode,
   }
 }
 
+void create_arp_response(uint8_t *pkt, uint8_t *dst_mac,
+                         uint32_t dst_ip_addr, uint8_t *src_mac,
+                         uint32_t src_ip_addr) {
+  struct eth_header *eth_hdr = (struct eth_header*) pkt;
+  struct arp_packet *arp_pkt = (struct arp_packet*) (pkt + sizeof(struct eth_header));  
+  create_eth_header(eth_hdr, dst_mac, src_mac, htons(ETHERNET_TYPE_ARP));
+  create_arp_content(arp_pkt, ARP_OPCODE_REPLY,
+                    src_mac, src_ip_addr, dst_mac, dst_ip_addr);
+}
+
 void mac_inttostr(uint8_t *mac, char* buf, int len) {
   if(buf && len < 24)
     return;
-  /* sprintf(buf, "%d", 5); */
   sprintf(buf, "%x:%x:%x_%x:%x:%x", mac[0],mac[1],mac[2], mac[3],mac[4],mac[5]);
 }
 
@@ -166,10 +173,10 @@ void print_eth_header(struct eth_header* pkt) {
   char buf[25];
   memset(buf, 0, sizeof(buf));
   
-  mac_inttostr(pkt->dst_addr, buf, sizeof(buf));
+  mac_inttostr(pkt->dst_mac, buf, sizeof(buf));
   DEBUG("\t dst_addr: %s\n",buf);
 
-  mac_inttostr(pkt->src_addr, buf, sizeof(buf));
+  mac_inttostr(pkt->src_mac, buf, sizeof(buf));
   DEBUG("\t src_addr: %s\n",buf);
   
   uint16_t host16 = ntohs(pkt->eth_type);
@@ -187,7 +194,7 @@ void print_eth_header(struct eth_header* pkt) {
       DEBUG("\t type = 0x%x : IPv6\n", host16);
       break;      
     default:
-      DEBUG("\t type = ox%x : UNKNOWN\n", host16);
+      DEBUG("\t type = 0x%x : UNKNOWN\n", host16);
   }
 }
 
@@ -235,16 +242,13 @@ void print_arp_packet(struct arp_packet* pkt) {
 }
 
 void arp_thread(void *in, void **out) {
-  DEBUG("|arp_thread function ------------------------------|\n");
+  DEBUG("arp_thread function ------------------------------|\n");
   struct arp_info * ai = (struct arp_info *)in;
+  DEBUG("ai = 0x%p\n",ai);
   struct nk_net_dev_characteristics c;
-  DEBUG("|ai = %p\n",ai);
   nk_net_dev_get_characteristics(ai->netdev, &c);
-  // now you have the MAC address in c
-  // and the ip address in ai, so we have the binding once again
-
-  uint8_t input_packet[c.max_tu];
   DEBUG("Can receive %d bytes\n", c.max_tu);
+  uint8_t input_packet[c.max_tu];
   DEBUG("arp_thread before while ------------------------------\n");
   while (1) { 
     // wait to receive a packet - should check errors
@@ -254,7 +258,7 @@ void arp_thread(void *in, void **out) {
     dump_packet(input_packet, 24);
     struct eth_header *eth_hdr_in = (struct eth_header*) input_packet;
     struct arp_packet *arp_pkt_in = (struct arp_packet*) (input_packet+sizeof(struct eth_header));
-    // if(input packet is an ARP packet and its a request && it matches ai->ip_addr)
+    // if(input packet is an ARP packet its a request && it matches ai->ip_addr)
     print_eth_header(eth_hdr_in);
     if ((ntohs(eth_hdr_in->eth_type) != ETHERNET_TYPE_ARP)) {
       DEBUG("Not an ARP packet (type = 0x%04x)\n", ntohs(eth_hdr_in->eth_type));
@@ -264,17 +268,16 @@ void arp_thread(void *in, void **out) {
     print_arp_packet(arp_pkt_in);
     DEBUG("if it is my packet ------------------------------\n");
     DEBUG("compare broadcast %d\n",
-          compare_mac(eth_hdr_in->dst_addr,
-                      (uint8_t*) ARP_BROADCAST_MAC));
+          compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC));
     DEBUG("compare dst %d\n",
-          compare_mac(eth_hdr_in->dst_addr, c.mac));
+          compare_mac(eth_hdr_in->dst_mac, c.mac));
     DEBUG("ntohs(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST %d\n",
           ntohs(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST);
     DEBUG("ntohl(arp_pkt_in->target_ip_addr) == ai->ip_addr %d\n",
           ntohl(arp_pkt_in->target_ip_addr) == ai->ip_addr);
     
-    if ((compare_mac(eth_hdr_in->dst_addr, (uint8_t*) ARP_BROADCAST_MAC) ||
-         compare_mac(eth_hdr_in->dst_addr, c.mac)) &&        
+    if ((compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) ||
+         compare_mac(eth_hdr_in->dst_mac, c.mac)) &&        
         (ntohs(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST) &&
         (ntohl(arp_pkt_in->target_ip_addr) == ai->ip_addr)) {
       DEBUG("yes ----------------------------------------\n");      
@@ -282,16 +285,19 @@ void arp_thread(void *in, void **out) {
       // construct an ARP reply in output_packet
       struct eth_header *eth_hdr_out = (struct eth_header*) output_packet;
       struct arp_packet *arp_pkt_out = (struct arp_packet*) (output_packet + sizeof(struct eth_header));
-      DEBUG("create a response packet ------------------------------\n");
-      create_eth_header(eth_hdr_out, eth_hdr_in->src_addr,
-                        c.mac, htons(ETHERNET_TYPE_ARP));
+      DEBUG("create a response packet\n");
+      create_arp_response(output_packet, eth_hdr_in->src_mac,
+                          ntohl(arp_pkt_in->sender_ip_addr),
+                          c.mac, ai->ip_addr);
+      /* create_eth_header(eth_hdr_out, eth_hdr_in->src_addr, */
+      /*                   c.mac, htons(ETHERNET_TYPE_ARP)); */
       print_eth_header(eth_hdr_out);
-      create_arp_packet(arp_pkt_out, ARP_OPCODE_REPLY,
-                        c.mac, ai->ip_addr,  
-                        arp_pkt_in->sender_mac, 
-                        ntohl(arp_pkt_in->sender_ip_addr));
+      /* create_arp_content(arp_pkt_out, ARP_OPCODE_REPLY, */
+      /*                   c.mac, ai->ip_addr,   */
+      /*                   arp_pkt_in->sender_mac,  */
+      /*                   ntohl(arp_pkt_in->sender_ip_addr)); */
       print_arp_packet(arp_pkt_out);
-      DEBUG("sending the response packet ------------------------------\n");
+      DEBUG("sending the response packet\n");
       nk_net_dev_send_packet(ai->netdev, output_packet,
                              sizeof(struct eth_header) + sizeof(struct arp_packet),
                              NK_DEV_REQ_BLOCKING);
@@ -301,34 +307,29 @@ void arp_thread(void *in, void **out) {
 
 int arp_init(struct naut_info * naut)
 {
-  INFO("arp init ========================================\n");
-  nk_thread_id_t tid;
-  // e1000_pci_init(naut);
-  // intiialize e1000, register it as, say, "e1000-0"
-  // e1000_state->netdev = nk_netdev_register("e1000-0", 0, );
-  // e1000_0_state.netdev = nk_net_dev_find("e1000-0");
+  DEBUG("arp init ========================================\n");
   struct arp_info *ai = malloc(sizeof(*ai));
   if (!ai) {
     ERROR("Cannot allocate ai arp_info\n");
     return -1;
   }  
-  //ai->netdev = e1000_0_state.netdev;   // store device to IP binding
+  // search for the device in netdev
   ai->netdev = nk_net_dev_find("e1000-0");
 
   if (!ai->netdev) { 
-      ERROR("Cannot find device\n");
-      return -1;
+    ERROR("Cannot find the \"e1000-0\" ethernet adapter from nk_net_dev\n");
+    return -1;
   }
 
-  DEBUG("ip_strtoint ========================================\n");
   ai->ip_addr = ip_strtoint(IP_ADDRESS_STRING);
   char buf[20];
   memset(buf,0, sizeof(buf));
-  DEBUG("ip address string: %s, ip address uint32_t: 0x%08x, ip address string: \n",
-        IP_ADDRESS_STRING, ai->ip_addr);//, ip_inttostr(ai->ip_addr, buf, 20));
-  /* // keep the ip address in network byte order */
-  DEBUG("ai=%p\n",ai);
+  // test the ip_inttostr function
+  ip_inttostr(ai->ip_addr, buf, 20);
+  DEBUG("ip address string: %s, ip address uint32_t: 0x%08x, string: %s\n",
+        IP_ADDRESS_STRING, ai->ip_addr, buf);
   DEBUG("nk_thread_start ========================================\n");  
+  nk_thread_id_t tid;
   if (nk_thread_start(arp_thread, (void*)ai , NULL, 1, PAGE_SIZE_4KB, &tid, 1)) {
     free(ai);
     return -1;

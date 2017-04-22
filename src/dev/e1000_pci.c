@@ -262,12 +262,15 @@ static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e100
 }
 
 static int e1000_send_packet(void* packet_addr, uint16_t packet_size,
-                             struct e1000_state *state){
+                             struct e1000_state *state) {
   uint16_t remaining_bytes = packet_size;
   uint64_t unresolved = 0;
   uint64_t oldest = TXD_TAIL;
   uint64_t index;
   uint8_t eop = 0;
+
+  if(TXD_RING->blocksize < packet_size)
+    return -1;
   // loop until 1) all bytes have been pushed to descriptors
   //      and   2) all used descriptors have been marked as done (sent)
   DEBUG("TDH=%d\n", READ(state->dev, TDH_OFFSET));
@@ -286,9 +289,9 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size,
         }
       }
     }
-    
-    // if(remaining_bytes > 0 && READ(state->dev, TDH_OFFSET) != NEXT_TXD) { 
-    if(remaining_bytes > 0) {    
+
+    // if there is more data and the txd is not full
+    if(remaining_bytes > 0 && READ(state->dev, TDH_OFFSET) != NEXT_TXD) { 
       // push as many remaining bytes as possible onto a new txd's block
       e1000_init_single_txd(TXD_TAIL, state); // make new descriptor
       uint64_t cpy_size = remaining_bytes > TXD_RING->blocksize ? TXD_RING->blocksize : remaining_bytes;
@@ -325,7 +328,7 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size,
   return 0;
 }
 
-static void* e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct e1000_state *state) {
+static int e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct e1000_state *state) {
   // TODO we're careless about the dst_size; there should probably be some kind of
   // check to make sure we're not going past any bounds as we write
   int headpos;
@@ -333,10 +336,8 @@ static void* e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct 
   int index = 0;
   int eop = 0;
   int j;
-  // init a descriptor
 
   DEBUG("Start receive, dest=%p, len=%lu\n", dst_addr, dst_size);
-
   RXD_TAIL = READ(state->dev, RDT_OFFSET);
   e1000_init_single_rxd(NEXT_RXD, state);
   RXD_TAIL = NEXT_RXD;
@@ -345,16 +346,16 @@ static void* e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct 
 
   // start listening
   while(!eop){
-
     headpos = READ(state->dev, RDH_OFFSET);
     while(headpos != RXD_PREV_HEAD){
       if(RXD_STATUS(RXD_PREV_HEAD).dd & 1){
         DEBUG("dd: %d\n", RXD_STATUS(RXD_PREV_HEAD).dd);
         DEBUG("RXD_LENGTH(RXD_PREV_HEAD): %d\n", RXD_LENGTH(RXD_PREV_HEAD));        
-        for(j = 0; j < RXD_LENGTH(RXD_PREV_HEAD); j++){
-          //TODO check DMA atomic size; right now we assume it's multiples of 64B
-          dst_addr[index+j] = ((uint64_t *)(RXD_ADDR(RXD_PREV_HEAD)))[j];
-        }
+        /* for(j = 0; j < RXD_LENGTH(RXD_PREV_HEAD); j++){ */
+        /*   //TODO check DMA atomic size; right now we assume it's multiples of 64B */
+        /*   dst_addr[index+j] = ((uint64_t *)(RXD_ADDR(RXD_PREV_HEAD)))[j]; */
+        /* } */
+        
         DEBUG("j = %d, index = %d\n", j, index);
         index += j;
         if(RXD_STATUS(RXD_PREV_HEAD).eop & 1){
@@ -364,6 +365,7 @@ static void* e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct 
         RXD_PREV_HEAD = RXD_INC(RXD_PREV_HEAD, 1);
       }
     }
+    
     for(int m = 0; m < RX_DSC_COUNT && RXD_INC(RXD_TAIL, m+1) != RXD_PREV_HEAD; m++){
       // DEBUG("m = %d\n", m);
       e1000_init_single_rxd(RXD_INC(RXD_TAIL, m), state);
@@ -374,7 +376,7 @@ static void* e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct 
       break;
     }
   }
-  return (void*)0;
+  return 0;
 }
 
 int e1000_get_characteristics(void *voidstate, struct nk_net_dev_characteristics *c) {
@@ -412,9 +414,12 @@ int e1000_post_send(void *state, uint8_t *src, uint64_t len, void (*callback)(vo
   // the ring
   // 3. put the data structure to map the pos in the ring from 2. to callback
   // and context (struct ...) [] -> callback and context
-  e1000_send_packet(src, (uint16_t)len, (struct e1000_state*) state);
-  (*callback)(context);
-  return 0; //succeeds
+  if(e1000_send_packet(src, (uint16_t)len, (struct e1000_state*) state)) {
+    return -1;
+  } else {
+    (*callback)(context);
+    return 0; //succeeds
+  }
 }
 
 int e1000_post_receive(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
@@ -427,9 +432,12 @@ int e1000_post_receive(void *state, uint8_t *src, uint64_t len, void (*callback)
   // the ring
   // 3. put the data structure to map the pos in the ring from 2. to
   // callback and context
-  e1000_receive_packet((uint64_t *)src, len, (struct e1000_state*) state);
-  (*callback)(context);
-  return 0;
+  if(e1000_receive_packet((uint64_t *)src, len, (struct e1000_state*) state)) {
+    return -1;
+  } else {
+    (*callback)(context);
+    return 0;
+  }
 }
 
 static int e1000_irq_handler(excp_entry_t * excp, excp_vec_t vec)

@@ -255,6 +255,7 @@ void arp_thread(void *in, void **out) {
     DEBUG("arp_thread while loop ------------------------------\n");
     nk_net_dev_receive_packet(ai->netdev, input_packet,
                               c.max_tu, NK_DEV_REQ_BLOCKING);
+    DEBUG("dump packet ------------------------------\n");    
     dump_packet(input_packet, 24);
     struct eth_header *eth_hdr_in = (struct eth_header*) input_packet;
     struct arp_packet *arp_pkt_in = (struct arp_packet*) (input_packet+sizeof(struct eth_header));

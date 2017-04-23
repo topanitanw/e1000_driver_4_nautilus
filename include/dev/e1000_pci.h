@@ -64,7 +64,6 @@
 #define E1000_CTRL_OFFSET     0x00000  /* Device Control - RW */
 #define E1000_STATUS_OFFSET   0x00008  /* Device Status - RO */
 
-
 // REGISTER BIT MASKS **********************************
 // E1000 Receive Register 
 #define RCTL_EN                         (1 << 1)    // Receiver Enable
@@ -98,7 +97,6 @@
 #define RCTL_BSIZE_8192                 ((2 << 16) | (1 << 25))
 #define RCTL_BSIZE_16384                ((1 << 16) | (1 << 25))
 
-
 // interrupt bits of icr register
 #define E1000_ICR_TXQE        (1 << 1)
 #define E1000_ICR_TXD_LOW     (1 << 15)
@@ -112,6 +110,9 @@
 #define TX_BLOCKSIZE 256 // bytes available per DMA block
 #define RX_DSC_COUNT 64  // equal to DMA block count
 #define RX_BLOCKSIZE 256 // bytes available per DMA block
+
+#define MIN_TU                48    /* minimum transfer unit */
+#define MAX_TU                1522  /* maximum transfer unit */
 
 // new type declaration
 struct e1000_dev {

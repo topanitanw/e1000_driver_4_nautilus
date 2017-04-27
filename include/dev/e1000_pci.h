@@ -58,6 +58,7 @@
 #define E1000_IMS_OFFSET      0x000D0  /* interrupt mask set/read register */
 #define E1000_IMC_OFFSET      0x000D8  /* interrupt mask clear */
 
+#define E1000_TIDV_OFFSET     0x03820  /* transmit interrupt delay value r/w */
 // PCI CONFIG SPACE ************************************
 #define INTEL_VENDOR_ID       0x8086
 #define E1000_DEVICE_ID       0x100E
@@ -98,18 +99,19 @@
 #define RCTL_BSIZE_16384                ((1 << 16) | (1 << 25))
 
 // interrupt bits of icr register
-#define E1000_ICR_TXQE        (1 << 1)
-#define E1000_ICR_TXD_LOW     (1 << 15)
-#define E1000_ICR_SRPD        (1 << 16)
+#define E1000_ICR_TXDW         1          /* transmit descriptor written back */
+#define E1000_ICR_TXQE         (1 << 1)   /* transmit queue empty */
+#define E1000_ICR_TXD_LOW      (1 << 15)  /* transmit descriptor low threshold hit */
+#define E1000_ICR_SRPD         (1 << 16)  /* small receive packet detected */
 
 // VARIABLE CONSTANTS *************************************
 /* these may need to dynamically change for different machines
    (for example, to allow buffer sizes to reflect mem availabilty)
 */
-#define TX_DSC_COUNT 64
-#define TX_BLOCKSIZE 256 // bytes available per DMA block
-#define RX_DSC_COUNT 64  // equal to DMA block count
-#define RX_BLOCKSIZE 256 // bytes available per DMA block
+#define TX_DSC_COUNT          64
+#define TX_BLOCKSIZE          256 // bytes available per DMA block
+#define RX_DSC_COUNT          64  // equal to DMA block count
+#define RX_BLOCKSIZE          256 // bytes available per DMA block
 
 #define MIN_TU                48    /* minimum transfer unit */
 #define MAX_TU                1522  /* maximum transfer unit */
@@ -185,19 +187,12 @@ struct e1000_tx_desc {
   uint16_t special;
 } __attribute__((packed)); 
 
-struct e1000_in_packet {
-  uint8_t *src_addr;
-  uint8_t dst_mac[6];
-  void    *callback;
-  void    *context;
-};
-
-struct e1000_out_packet {
-  uint8_t *src_addr;
-  uint8_t dst_mac[6];
-  uint64_t size;
-  void    *callback;
-  void    *context;
+struct e1000_desc_map {
+  /* uint8_t  *src_addr; */
+  /* uint8_t  dst_mac[6]; */
+  /* uint64_t size; */
+  void (*callback)(void *context);
+  void *context;
 };
 
 struct e1000_state {
@@ -206,8 +201,8 @@ struct e1000_state {
   char name[DEV_NAME_LEN];
   struct e1000_dev *dev;
   uint64_t mac_addr;
-  struct e1000_out_packet *outring; // circular queue of outgoing packets
-  struct e1000_in_packet *inring; // circular queue of incoming packets
+  struct e1000_desc_map *outring; // circular queue of outgoing packets
+  struct e1000_desc_map *inring; // circular queue of incoming packets
   uint64_t outhead;
   uint64_t outtail;
   uint64_t inhead;

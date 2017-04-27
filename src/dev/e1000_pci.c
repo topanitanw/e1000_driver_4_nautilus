@@ -86,28 +86,13 @@
 #define INTAILVAL INRING[INTAIL]
 #define INHEADVAL INRING[INHEAD]
 
-#define IRQ        11
+#define IRQ_NUMBER       11
     
 // transmitting buffer
-static struct e1000_dev *dev = NULL;
+static struct e1000_state *dev_state = NULL;
 
 int my_packet[16] = {0xdeadbeef,0xbeefdead, 0x12345678, 0x87654321, };
     
-/*
-  Description of Receive process
-
-  1) recieve descriptor must fit inside of the ring of 1024 (arbritary)
-	however, all of these recieve have headers are headers that point to
-	blocks of memory (where the device is going to automatically store the
-	incoming data from packets) The number of recieve descriptors is set
-  by the size (16 receive descriptors can fit in 1k) The ring is an array
-  of receive descriptors (the address part consumes 8 bytes of each recieve
-  descriptor) (other 8 bytes are about the status and size, etc...,
-  [and device will change this]) The receive buffer is an array of blocks
-  that the recieve descriptors are pointing too
-*/	
-
-
 // init_single_txd and init_single_rxd both assume that we're only using
 // continuous space in memory to form an "array" of blocks; this doesn't have to
 // be the case. If we want to dynamically allocate blocks from arbitrary places,
@@ -134,7 +119,7 @@ static int e1000_init_single_rxd(int index, struct e1000_state *state){
 // another buffer for DMA space 
 static int e1000_init_receive_ring(int blocksize, int blockcount, struct e1000_state *state)
 {
-  INRING = (struct e1000_in_packet *)malloc(sizeof(struct e1000_out_packet)*blockcount);
+  INRING = (struct e1000_desc_map *)malloc(sizeof(struct e1000_desc_map)*blockcount);
   if (!INRING) {
     ERROR("Cannot allocate inring buffer\n");
     return -1;
@@ -203,7 +188,7 @@ static int e1000_init_receive_ring(int blocksize, int blockcount, struct e1000_s
 // initialize ring buffer to hold transmit descriptors
 static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e1000_state *state)
 {
-  OUTRING = (struct e1000_out_packet *)malloc(sizeof(struct e1000_out_packet)*tx_dsc_count);
+  OUTRING = (struct e1000_desc_map *)malloc(sizeof(struct e1000_desc_map)*tx_dsc_count);
   if (!OUTRING) {
     ERROR("Cannot allocate OUTRING\n");
     return -1;
@@ -240,10 +225,13 @@ static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e100
   DEBUG("TX BUFFER AT %p\n",TXD_RING_BUFFER); // we need this to be < 4GB
 
   // store the address of the memory in TDBAL/TDBAH
-  WRITE(state->dev, TDBAL_OFFSET, (uint32_t)(0x00000000ffffffff & (uint64_t) TXD_RING_BUFFER));
-  WRITE(state->dev, TDBAH_OFFSET, (uint32_t)((0xffffffff00000000 & (uint64_t) TXD_RING_BUFFER) >> 32));
+  WRITE(state->dev, TDBAL_OFFSET,
+        (uint32_t)(0x00000000ffffffff & (uint64_t) TXD_RING_BUFFER));
+  WRITE(state->dev, TDBAH_OFFSET,
+        (uint32_t)((0xffffffff00000000 & (uint64_t) TXD_RING_BUFFER) >> 32));
   DEBUG("TXD_RING_BUFFER=0x%016lx, TDBAL=0x%08x, TDBAH=0x%08x\n",
-        TXD_RING_BUFFER, READ(state->dev, TDBAL_OFFSET), READ(state->dev, TDBAH_OFFSET));
+        TXD_RING_BUFFER, READ(state->dev, TDBAL_OFFSET),
+        READ(state->dev, TDBAH_OFFSET));
   // write tdlen: transmit descriptor length
   WRITE(state->dev, TDLEN_OFFSET, 64*1024);
   // write the tdh, tdt with 0
@@ -309,8 +297,8 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size,
         TXD_CMD(TXD_TAIL).ifcs = 0;
         TXD_CMD(TXD_TAIL).eop = 0;        
       }
-      
-      TXD_CMD(TXD_TAIL).ifcs = 1;
+
+      TXD_CMD(TXD_TAIL).ide = 1;
       TXD_CMD(TXD_TAIL).rs = 1;
       TXD_LENGTH(TXD_TAIL) = cpy_size;
 
@@ -427,6 +415,7 @@ int e1000_post_receive(void *state, uint8_t *src, uint64_t len, void (*callback)
   // the ring
   // 3. put the data structure to map the pos in the ring from 2. to
   // callback and context
+  
   if(e1000_receive_packet((uint64_t *)src, len, (struct e1000_state*) state)) {
     DEBUG("return error\n");
     return -1;
@@ -448,9 +437,20 @@ static int e1000_irq_handler(excp_entry_t * excp, excp_vec_t vec)
   // 5. use the data structure in e1000_post_send 3. to map the pos back to
   // callback and context
   // 6. run callback(context);
-  
+  uint32_t icr = READ_MEM(dev_state->dev, E1000_ICR_OFFSET);
+  DEBUG("ICR: 0x%08x\n", icr);
+  uint32_t ims = READ_MEM(dev_state->dev, E1000_IMS_OFFSET);
+  DEBUG("IMS: 0x%08x\n", ims);
+  if(icr & E1000_ICR_TXDW) {
+    DEBUG("handle the txdw interrupt\n");
+  }
+
+  if(icr & E1000_ICR_TXQE) {
+    DEBUG("handle the txqe interrupt\n");
+  }
   // must have this line at the end of the handler
   IRQ_HANDLER_END();
+  DEBUG("end irq\n\n\n");
   return 0;
 }
 
@@ -463,6 +463,7 @@ static struct nk_net_dev_int ops={
 int e1000_pci_init(struct naut_info * naut)
 {
   struct e1000_state *state = (struct e1000_state *)malloc(sizeof(struct e1000_state));
+  dev_state = state;
   struct pci_info *pci = naut->sys.pci;
   struct list_head *curbus, *curdev;
   int num = 0;
@@ -496,13 +497,14 @@ int e1000_pci_init(struct naut_info * naut)
         DEBUG("E1000 class code 0x%02x subclass 0x%02x prog_if 0x%02x\n",
               cfg->class_code, cfg->subclass, cfg->prog_if);
         // struct e1000_dev *dev;
-        dev = malloc(sizeof(struct e1000_dev));
+        struct e1000_dev *dev = malloc(sizeof(struct e1000_dev));
         if (!dev) {
           ERROR("Cannot allocate device\n");
           return -1;
         }
+        
+        memset(dev,0,sizeof(*dev));
         state->dev = dev;
-        memset(state->dev,0,sizeof(*dev));
         dev->pci_dev = pdev;
 
         // PCI Interrupt (A..D)
@@ -611,48 +613,64 @@ int e1000_pci_init(struct naut_info * naut)
     }
   }
 
-  if(!dev) {
+  if(!state->dev) {
+    free(state);
+    state = NULL;
     ERROR("cannot find the e1000 device");
     return 0;
   }
 
   // register the interrupt handler
-  /* register_irq_handler(IRQ, e1000_irq_handler, NULL); */
-  /* nk_unmask_irq(IRQ); */
+  register_irq_handler(IRQ_NUMBER, e1000_irq_handler, NULL);
+  nk_unmask_irq(IRQ_NUMBER);
   
-  /* uint32_t status = 0; */
+  uint32_t status = 0;
   /* WRITE_MEM(state->dev, E1000_TXDCTL_OFFSET, (0 << 25)); */
   /* WRITE_MEM(state->dev, E1000_RSRPD_OFFSET, 500); */
-  /* status = READ(state->dev, E1000_RSRPD_OFFSET); */
-  /* DEBUG("RSRPD: %d\n", status); */
-  /* // WRITE_MEM(state->dev, E1000_ICS_OFFSET, E1000_ICR_SRPD); */
-  /*           // E1000_ICR_TXQE | E1000_ICR_TXD_LOW); */
-  /* WRITE_MEM(state->dev, E1000_IMS_OFFSET, */
-  /*           E1000_ICR_TXQE | E1000_ICR_TXD_LOW | E1000_ICR_SRPD); */
+  status = READ(state->dev, E1000_RSRPD_OFFSET);
+  DEBUG("ICS: %d\n", status);
+
+  /* WRITE_MEM(state->dev, E1000_ICS_OFFSET, */
+  /*           E1000_ICR_TXDW); */
+            // | E1000_ICR_SRPD | E1000_ICR_TXQE | E1000_ICR_TXD_LOW);
+  // WRITE_MEM(state->dev, E1000_TIDV_OFFSET, 100000);
+  WRITE_MEM(state->dev, E1000_IMS_OFFSET, // E1000_ICR_TXDW |
+            E1000_ICR_TXQE); // | E1000_ICR_TXD_LOW | E1000_ICR_SRPD);
+  status = READ(state->dev, E1000_IMS_OFFSET);
+  DEBUG("IMS: %d\n", status);  
   /* status = READ_MEM(state->dev, E1000_STATUS_OFFSET); */
   /* DEBUG("*** e1000 status = 0x%x\n", status); */
-  /* status = READ_MEM(state->dev, E1000_ICR_OFFSET); */
-  /* DEBUG("*** e1000 ICR = 0x%08x TXQE 0x%08x\n", status, E1000_ICR_TXQE & status); */
-  /* DEBUG("*** e1000 ICR = 0x%08x TXD_LOW 0x%08x\n", status, E1000_ICR_TXD_LOW & status); */
+  status = READ_MEM(state->dev, E1000_ICR_OFFSET);
+  DEBUG("*** e1000 ICR = 0x%08x TXQE 0x%08x\n", status, E1000_ICR_TXQE & status); 
+  DEBUG("*** e1000 ICR = 0x%08x TXD_LOW 0x%08x\n", status, E1000_ICR_TXD_LOW & status);
+  DEBUG("*** e1000 ICR = 0x%08x TXDW 0x%08x\n", status, E1000_ICR_TXDW & status);   
   // need to init each e1000
   /* status = READ_MEM(state->dev, E1000_STATUS_OFFSET); */
   /* DEBUG("*** e1000 status = 0x%x\n", status); */
   /* status = READ_MEM(state->dev, E1000_ICR_OFFSET); */
   /* DEBUG("*** e1000 ICR = 0x%08x TXQE 0x%08x\n", status, E1000_ICR_TXQE & status); */
-  /* DEBUG("*** e1000 ICR = 0x%08x TXD_LOW 0x%08x\n", status, E1000_ICR_TXD_LOW & status) */;
+  /* DEBUG("*** e1000 ICR = 0x%08x TXD_LOW 0x%08x\n", status, E1000_ICR_TXD_LOW & status); */
   e1000_init_transmit_ring(TX_BLOCKSIZE, TX_DSC_COUNT, state);
   e1000_init_receive_ring(RX_BLOCKSIZE, RX_DSC_COUNT, state);
   // ***************** INIT IS COMPLETE ************************* //
   DEBUG("total pkt tx=%d\n", READ_MEM(state->dev, E1000_TPT_OFFSET));
   DEBUG("total pkt rx=%d\n", READ(state->dev, E1000_TPR_OFFSET));  
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet), state);
-  e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet), state);  
+  DEBUG("tx tail_pos: %d TDT: %d\n",
+        TXD_TAIL, READ_MEM(state->dev, TDT_OFFSET));
+  e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet), state);
+  DEBUG("tx tail_pos: %d TDT: %d\n",
+        TXD_TAIL, READ_MEM(state->dev, TDT_OFFSET));  
   DEBUG("total pkt tx=%d\n", READ_MEM(state->dev, E1000_TPT_OFFSET));
   DEBUG("total pkt rx=%d\n", READ(state->dev, E1000_TPR_OFFSET));    
   uint64_t* my_rcv_space = malloc(8*1024);
   DEBUG("receiving a packet\n");
   e1000_receive_packet(my_rcv_space, 8*1024, state);
-  e1000_receive_packet(my_rcv_space, 8*1024, state);  
+  DEBUG("rx tail_pos: %d RDT: %d\n",
+        RXD_TAIL, READ_MEM(state->dev, RDT_OFFSET));   
+  e1000_receive_packet(my_rcv_space, 8*1024, state);
+  DEBUG("rx tail_pos: %d RDT: %d\n",
+        RXD_TAIL, READ_MEM(state->dev, RDT_OFFSET));     
   /* status = READ_MEM(state->dev, E1000_ICR_OFFSET);   */
   /* DEBUG("*** e1000 ICR = 0x%08x SRPD 0x%08x\n", status, E1000_ICR_SRPD & status); */
   //e1000_receive_packet(my_rcv_space, 8*1024, state);

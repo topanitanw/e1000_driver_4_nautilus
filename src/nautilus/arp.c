@@ -299,7 +299,8 @@ void arp_thread(void *in, void **out) {
       /*                   ntohl(arp_pkt_in->sender_ip_addr)); */
       print_arp_packet(arp_pkt_out);
       DEBUG("sending the response packet\n");
-      nk_net_dev_send_packet(ai->netdev, output_packet,
+      nk_net_dev_send_packet(ai->netdev,
+                             output_packet,
                              sizeof(struct eth_header) + sizeof(struct arp_packet),
                              NK_DEV_REQ_BLOCKING);
     }

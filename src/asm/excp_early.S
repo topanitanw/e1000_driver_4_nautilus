@@ -70,9 +70,9 @@ GLOBAL(early_irq_common)
 #ifdef NAUT_CONFIG_PROFILE
     callq nk_irq_prof_enter
 #endif
-
+    // rdx 3rd argument
     leaq 128(%rsp), %rdi # pointer to exception struct
-    movq 120(%rsp), %rsi # irq num
+    movq 120(%rsp), %rsi # interrupt vector
     movabs $handler_table, %rdx
     movq (%rdx, %rsi, 8), %rcx
     

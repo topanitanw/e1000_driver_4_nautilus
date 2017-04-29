@@ -138,7 +138,6 @@ int nk_net_dev_send_packet(struct nk_net_dev *dev,
             return 0;
           }
         }
-	
       }
       break;
     default:

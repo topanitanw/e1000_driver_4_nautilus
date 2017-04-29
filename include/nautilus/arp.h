@@ -33,17 +33,32 @@
 #define MAC_LEN                   6              /* length of mac address in bytes */
 #define IP_ADDRESS_STRING         "10.10.10.3"
 
+// ethernet frame
+#define ETHERNET_TYPE_ARP         0x0806         /* ethernet type arp */
+#define ETHERNET_TYPE_IPV4        0x0800         /* ethernet type ipv4 */
+#define ETHERNET_TYPE_IPX         0x8137         /* ethernet type ipx */
+#define ETHERNET_TYPE_IPV6        0x86dd         /* ethernet type ipv6 */
+
+// ip packet
+// ip protocol
+#define IP_HEADER_LEN             20
+#define IP_VER_IPV4               4
+#define IP_VER_IPV6               6
+#define IP_TTL                    64             /* time to live */
+#define IP_FLAG_MASK              0xE000
+#define IP_FLAG_MF                0x2000            /* more fragment */
+#define IP_FLAG_DF                0x4000            /* no fragment */
+#define IP_PRO_ICMP               0x01           /* internet control message protocol */
+
 // ARP frame
 #define ARP_HW_TYPE_ETHERNET      1              /* arp hardware type for ethernet */
 #define ARP_PRO_TYPE_IPV4         0x0800         /* arp protocol type for ipv4 */
 #define ARP_OPCODE_REQUEST        0x0001         /* arp opcode request */
 #define ARP_OPCODE_REPLY          0x0002         /* arp opcode reply */
 
-// ethernet frame
-#define ETHERNET_TYPE_ARP         0x0806         /* ethernet type arp */
-#define ETHERNET_TYPE_IPV4        0x0800         /* ethernet type ipv4 */
-#define ETHERNET_TYPE_IPX         0x8137         /* ethernet type ipx */
-#define ETHERNET_TYPE_IPV6        0x86dd         /* ethernet type ipv6 */
+// ICMP message
+#define ICMP_ECHO_REPLY           0
+#define ICMP_ECHO_REQUEST         8
 
 extern const uint8_t ARP_BROADCAST_MAC[6];
 
@@ -54,6 +69,40 @@ struct eth_header {
   uint16_t eth_type;
 } __packed;
 
+// IP header format
+//  0                   1                   2                   3
+//  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |Version|  IHL  |Type of Service|          Total Length         |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |         Identification        |Flags|      Fragment Offset    |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |  Time to Live |    Protocol   |         Header Checksum       |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |                       Source Address                          |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |                    Destination Address                        |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// |                    Options                    |    Padding    |
+// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+// size 20 bytes
+struct ip_header {
+  uint8_t  hl : 4; /* header length */
+  uint8_t  version : 4; /* version */
+  uint8_t  tos; /* type of service */
+  uint16_t len; /* total length */
+  
+  uint16_t id; /* identification */
+  /* uint16_t offset : 13; /\* fragment offset field *\/ */
+  /* uint8_t  flag : 3; /\* flags *\/ */
+  uint16_t offset;
+  uint8_t ttl; /* time to live */
+  uint8_t protocol; /* protocol */
+  uint16_t checksum; /* checksum */
+  uint32_t ip_src; /* source and dest address */
+  uint32_t ip_dst;  
+} __packed;
+ 
 // Internet Protocol (IPv4) over Ethernet ARP packet
 struct arp_packet {
   uint16_t hw_type;                    /* hardware address */
@@ -72,6 +121,16 @@ struct arp_info {
   uint32_t ip_addr;
 };
 
+// icmp header
+// size = 8 without data
+struct icmp_header {
+  uint8_t type;                 /* type */
+  uint8_t code;                 /* code */
+  uint16_t checksum;            /* icmp header checksum */
+  uint16_t id;                  /* identifier */
+  uint16_t seq_num;             /* sequence number */
+} __packed;
+  
 // function definition
 void dump_packet(uint8_t *p, int len);
 int arp_init(struct naut_info *);

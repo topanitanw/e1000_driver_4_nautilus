@@ -75,17 +75,10 @@
 #define NEXT_TXD TXD_INC(TXD_RING->tail_pos, 1)
 #define PREV_TXD TXD_INC(TXD_RING->tail_pos, TXD_COUNT - 1)
 
-#define INCRING(a, b, c) (((a)+(b)) % c) // a is old index, b is incr amount, c is queue size
-#define OUTRING (state->outring)
-#define INRING (state->inring)
-#define OUTTAIL (state->outtail)
-#define OUTHEAD (state->outhead)
-#define INHEAD (state->inhead)
-#define INTAIL (state->intail)
-#define OUTTAILVAL OUTRING[OUTTAIL]
-#define OUTHEADVAL OUTRING[OUTHEAD]
-#define INTAILVAL INRING[INTAIL]
-#define INHEADVAL INRING[INHEAD]
+// a is old index, b is incr amount, c is queue size
+#define INCRING(a, b, c) (((a)+(b)) % c) 
+#define TXMAP (state->tx_map)
+#define RXMAP (state->rx_map)
 
 #define IRQ_NUMBER       11
 
@@ -120,29 +113,38 @@ static int e1000_init_single_rxd(int index, struct e1000_state *state){
 
 // initialize a ring buffer to hold receive descriptor and
 // another buffer for DMA space
-static int e1000_init_receive_ring(int blocksize, int blockcount, struct e1000_state *state)
+static int e1000_init_receive_ring(int blocksize, int rx_dsc_count, struct e1000_state *state)
 {
-  INRING = (struct e1000_desc_map *)malloc(sizeof(struct e1000_desc_map)*blockcount);
-  if (!INRING) {
-    ERROR("Cannot allocate inring buffer\n");
+  RXMAP = malloc(sizeof(struct e1000_map_ring));
+  if (!RXMAP) {
+    ERROR("Cannot allocate rxmap\n");
     return -1;
   }
+  memset(TXMAP, 0, sizeof(struct e1000_map_ring));
+
+  RXMAP->ring = malloc(sizeof(struct e1000_fn_map) * rx_dsc_count);
+  if (!RXMAP->ring) {
+    ERROR("Cannot allocate rxmap->ring\n");
+    return -1;
+  }
+  memset(RXMAP->ring, 0, sizeof(struct e1000_fn_map) * rx_dsc_count);
+  RXMAP->ring_size = rx_dsc_count;
 
   RXD_RING = malloc(sizeof(struct e1000_ring));
   if (!RXD_RING) {
     ERROR("Cannot allocate rxd_ring buffer\n");
     return -1;
   }
-
   memset(RXD_RING, 0, sizeof(struct e1000_ring));
+
   RXD_RING->tail_pos = 0;
 
   //these are memory blocks that will store a packet
   RXD_RING->blocksize = blocksize; //should reflect register value (256)
   // the total size of the receive descriptor ring
-  int rd_buff_size = sizeof(struct e1000_rx_desc) * blockcount;
+  int rd_buff_size = sizeof(struct e1000_rx_desc) * rx_dsc_count;
   // the number of the receive descriptor in the ring
-  RXD_COUNT = blockcount;
+  RXD_COUNT = rx_dsc_count;
 
   // allocate a large block of memory to store receiving packets
   RX_PACKET_BUFFER = malloc(RXD_RING->blocksize * RXD_COUNT);
@@ -189,14 +191,24 @@ static int e1000_init_receive_ring(int blocksize, int blockcount, struct e1000_s
 }
 
 // initialize ring buffer to hold transmit descriptors
-static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e1000_state *state)
+static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count,
+                                    struct e1000_state *state)
 {
-  OUTRING = (struct e1000_desc_map *)malloc(sizeof(struct e1000_desc_map)*tx_dsc_count);
-  if (!OUTRING) {
-    ERROR("Cannot allocate OUTRING\n");
+  TXMAP = malloc(sizeof(struct e1000_map_ring));
+  if (!TXMAP) {
+    ERROR("Cannot allocate txmap\n");
     return -1;
   }
-  memset(TXD_RING, 0, sizeof(struct e1000_ring));
+  memset(TXMAP, 0, sizeof(struct e1000_map_ring));
+
+  TXMAP->ring = malloc(sizeof(struct e1000_fn_map) * tx_dsc_count);
+  if (!TXMAP->ring) {
+    ERROR("Cannot allocate txmap->ring\n");
+    return -1;
+  }
+  memset(TXMAP->ring, 0, sizeof(struct e1000_fn_map) * tx_dsc_count);
+  TXMAP->ring_size = tx_dsc_count;
+  
   TXD_RING = malloc(sizeof(struct e1000_ring));
   if (!TXD_RING) {
     ERROR("Cannot allocate TXD_RING\n");
@@ -254,7 +266,7 @@ static int e1000_init_transmit_ring(int blocksize, int tx_dsc_count, struct e100
 }
 
 static int e1000_send_packet(void* packet_addr, uint16_t packet_size,
-                             struct e1000_state *state, nk_dev_request_type_t req) {
+                             struct e1000_state *state, void* context) {
   /* uint16_t remaining_bytes = packet_size; */
   /* uint64_t unresolved = 0; */
   /* uint64_t oldest = TXD_TAIL; */
@@ -318,7 +330,7 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size,
   /* } */
   /* DEBUG("DONE SENT -----------------------\n"); */
   /* return 0; */
-  // typedef enum {NK_DEV_REQ_BLOCKING, NK_DEV_REQ_NONBLOCKING} nk_dev_request_type_t;
+
   if(TXD_RING->blocksize < packet_size) {
     ERROR("cannot send a packet: the packet_size %d is larger than blocksize %d\n",
           packet_size, TXD_RING->blocksize);
@@ -333,9 +345,11 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size,
   TXD_CMD(TXD_TAIL).ifcs = 1;
   TXD_CMD(TXD_TAIL).eop = 1;
 
-  if(req == NK_DEV_REQ_BLOCKING) {
+  if(context) {
+    // blocking
     TXD_CMD(TXD_TAIL).ide = 1;
   } else {
+    // non-blocking 
     TXD_CMD(TXD_TAIL).ide = 0;
   }
 
@@ -347,7 +361,7 @@ static int e1000_send_packet(void* packet_addr, uint16_t packet_size,
   DEBUG("TDH = %d, TDT = %d, TXD_STATUS(TXD_TAIL-1).dd = %d\n",
         READ(state->dev, TDH_OFFSET), READ(state->dev, TDT_OFFSET),
         TXD_STATUS(TXD_TAIL-1).dd);
-  while((req == NK_DEV_REQ_BLOCKING) && TXD_STATUS(TXD_TAIL-1).dd == 0) {
+  while(context && TXD_STATUS(TXD_TAIL-1).dd == 0) {
     DEBUG("polling\n");
   }
   DEBUG("DONE send -----\n");
@@ -371,10 +385,7 @@ static int e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct e1
   // start listening
   while(!(eop)){
     headpos = READ(state->dev, RDH_OFFSET);
-    /* DEBUG("while(!(eop)){ eop = %d headpos = %d, RXD_PREV_HEAD = %d\n", */
-    /*       eop, headpos, RXD_PREV_HEAD); */
     while(headpos != RXD_PREV_HEAD){
-      /* DEBUG("while(headpos != RXD_PREV_HEAD){\n"); */
       if(RXD_STATUS(RXD_PREV_HEAD).dd & 1){
         DEBUG("dd: %d\n", RXD_STATUS(RXD_PREV_HEAD).dd);
         DEBUG("RXD_LENGTH(RXD_PREV_HEAD): %d\n", RXD_LENGTH(RXD_PREV_HEAD));
@@ -382,9 +393,6 @@ static int e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct e1
           //TODO check DMA atomic size; right now we assume it's multiples of 64B
           dst_addr[index+j] = ((uint64_t *)(RXD_ADDR(RXD_PREV_HEAD)))[j];
         }
-        /* uint64_t cpy_size = RXD_RING->blocksize > RXD_LENGTH(RXD_PREV_HEAD) ? RXD_LENGTH(RXD_PREV_HEAD) : RXD_RING->blocksize; */
-        /* memcpy((void*)dst_addr, RXD_ADDR(RXD_PREV_HEAD), RXD_LENGTH(RXD_PREV_HEAD)); */
-        /* DEBUG("cpy_size = %d\n", cpy_size); */
         index += j;
         if(RXD_STATUS(RXD_PREV_HEAD).eop & 1){
           eop = 1;
@@ -395,35 +403,47 @@ static int e1000_receive_packet(uint64_t* dst_addr, uint64_t dst_size, struct e1
     }
 
     for(int m = 0; !eop && m < RX_DSC_COUNT && RXD_INC(RXD_TAIL, m+1) != RXD_PREV_HEAD; m++){
-      /* DEBUG("m = %d\n", m); */
-      /* DEBUG("RX_DSC_COUNT = %d, RXD_INC(RXD_TAIL, m+1) = %d, RXD_PREV_HEAD = %d\n", */
-      /*       RX_DSC_COUNT, RXD_INC(RXD_TAIL, m+1), RXD_PREV_HEAD);        */
       e1000_init_single_rxd(RXD_INC(RXD_TAIL, m), state);
-      /* DEBUG("--\n"); */
     }
     WRITE(state->dev, RDT_OFFSET, RXD_TAIL);
-
-    /* if(eop){ */
-    /*   break; */
-    /* } */
   }
   return 0;
 }
 
-int e1000_get_characteristics(void *voidstate, struct nk_net_dev_characteristics *c) {
-  struct e1000_state *state=(struct e1000_state*)voidstate;
-  for(int i=0; i<6; i++){
-      c->mac[i]=((uint8_t*)(&(state->mac_addr)))[i];
-  }
+int e1000_get_characteristics(void *vstate, struct nk_net_dev_characteristics *c) {
+  struct e1000_state *state=(struct e1000_state*)vstate;
+  memcpy((void *) state->mac_addr, c->mac, MAC_LEN);
   // min_tu the minimum pkt size to tx
-  c->min_tu = 48; // the device documentation seemed to imply a number like this
-  c->max_tu = 1522; // TODO we just picked this value out of the air; probably should find the real value
+  c->min_tu = MIN_TU; // the device documentation seemed to imply a number like this
+  c->max_tu = MAX_TU; // TODO we just picked this value out of the air; probably should find the real value
   return 0; //succeeds
 }
 
+static inline void e1000_unmap_callback(struct e1000_map_ring* map, 
+                                        uint8_t** callback, void** context) {
+  // callback is a function pointer
+  uint64_t i = map->head_pos;
+  *callback = (uint8_t *) map->ring[i].callback;
+  *context =  map->ring[i].context;
+  map->ring[i].callback = NULL;
+  map->ring[i].context = NULL;
+  uint64_t sz = map->ring_size;  
+  map->head_pos = (sz + map->head_pos) % sz;  
+}
+
+static inline void e1000_map_callback(struct e1000_map_ring* map, 
+                                      void (*callback)(void*),
+                                      void* context) {
+  uint64_t i = map->tail_pos;
+  struct e1000_fn_map *fnmap = (map->ring + i);
+  fnmap->callback = callback;
+  fnmap->context = (uint64_t *)context;
+  uint64_t sz = map->ring_size;
+  map->tail_pos = (sz + map->tail_pos) % sz;
+}
+
 int e1000_post_send(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context){
-  // TODO (we don't do any queueing because we didn't do interrupts
-  // we just try to
+  // TODO do interrupts
   // send right away and then do a callback when the send is done)
   // start the tx
   // check len < max_tu if no, return -1
@@ -434,13 +454,19 @@ int e1000_post_send(void *state, uint8_t *src, uint64_t len, void (*callback)(vo
   // the ring
   // 3. put the data structure to map the pos in the ring from 2. to callback
   // and context (struct ...) [] -> callback and context
-  nk_dev_request_type_t req = callback ? NK_DEV_REQ_NONBLOCKING : NK_DEV_REQ_BLOCKING;
-  if(e1000_send_packet(src, (uint16_t)len, (struct e1000_state*) state, req)) {
-    return -1;
+  int res = 0;
+  if(callback) {
+    // blocking
+    res = e1000_send_packet(src, (uint16_t) len,
+                            (struct e1000_state*) state, context);
+    (*callback)(context);
   } else {
-    if(callback) (*callback)(context);
-    return 0; //succeeds
+    // non-blocking
+    e1000_map_callback(((struct e1000_state*)state)->tx_map, callback, context);
+    res = e1000_send_packet(src, (uint16_t) len,
+                            (struct e1000_state*) state, context);
   }
+  return res;
 }
 
 int e1000_post_receive(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context) {
@@ -469,6 +495,7 @@ static int e1000_irq_handler(excp_entry_t * excp, excp_vec_t vec)
 {
   DEBUG("e1000_handler vector: 0x%x rip: 0x%p\n", vec, excp->rip);
   // 1. figure which e1000 -> this gives the e1000 state
+  //    need to add the third argument for this function
   // 2. figure why the interrupt error rx tx
   // 3. assume tx
   // 4. determine the position of the descriptor that is done
@@ -476,16 +503,19 @@ static int e1000_irq_handler(excp_entry_t * excp, excp_vec_t vec)
   // callback and context
   // 6. run callback(context);
   uint32_t icr = READ_MEM(dev_state->dev, E1000_ICR_OFFSET);
-  DEBUG("ICR: 0x%08x\n", icr);
   uint32_t ims = READ_MEM(dev_state->dev, E1000_IMS_OFFSET);
-  DEBUG("IMS: 0x%08x\n", ims);
-  if((icr & ims) & E1000_ICR_TXDW) {
+  uint32_t mask_int = icr & ims;
+  DEBUG("ICR: 0x%08x IMS: 0x%08x mask_int: 0x%08x\n", icr, ims, mask_int);
+  
+  void (*callback)(void*) = NULL;
+  void *context = NULL;
+  
+  if((mask_int & E1000_ICR_TXDW) || (mask_int & E1000_ICR_TXQE)) {
     DEBUG("handle the txdw interrupt\n");
-  }
-
-  if((icr & ims) & E1000_ICR_TXQE) {
-    DEBUG("handle the txqe interrupt\n");
-  }
+    e1000_unmap_callback(dev_state->tx_map,
+                         (uint8_t **)&callback, (void **)&context);
+    callback(context);
+  } 
   // must have this line at the end of the handler
   IRQ_HANDLER_END();
   DEBUG("end irq\n\n\n");
@@ -695,11 +725,11 @@ int e1000_pci_init(struct naut_info * naut)
   DEBUG("total pkt tx=%d\n", READ_MEM(state->dev, E1000_TPT_OFFSET));
   DEBUG("total pkt rx=%d\n", READ_MEM(state->dev, E1000_TPR_OFFSET));
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet),
-                    state, NK_DEV_REQ_NONBLOCKING);
+                    state, 0);
   DEBUG("tx tail_pos: %d TDT: %d\n",
         TXD_TAIL, READ_MEM(state->dev, TDT_OFFSET));
   e1000_send_packet(my_packet, (uint16_t)sizeof(my_packet),
-                    state, NK_DEV_REQ_BLOCKING);
+                    state, 0);
   DEBUG("tx tail_pos: %d TDT: %d\n",
         TXD_TAIL, READ_MEM(state->dev, TDT_OFFSET));
   DEBUG("total pkt tx=%d\n", READ_MEM(state->dev, E1000_TPT_OFFSET));

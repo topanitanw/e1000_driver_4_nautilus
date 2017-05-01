@@ -172,7 +172,7 @@ void create_ip_header(struct ip_header *pkt, uint32_t dst_ip_addr,
   /* size of the datagram = size of ip header + data */
   pkt->len = ntohs(sizeof(struct ip_header) + data_len);
   pkt->id = 0;
-  pkt->offset = ntohs(IP_FLAG_DF);
+  pkt->offset = 0;// ntohs(IP_FLAG_DF);
   pkt->ttl = 64;                /* from icmp of ping command */
   pkt->protocol = IP_PRO_ICMP;
   pkt->ip_src = ntohl(src_ip_addr);
@@ -186,9 +186,11 @@ void create_icmp_response(uint8_t *pkt, uint8_t *dst_mac,
   uint8_t *eth_hdr = pkt;  
   uint8_t *ip_hdr = pkt + sizeof(struct eth_header);
   uint8_t *icmp_hdr = pkt + sizeof(struct eth_header) + sizeof(struct ip_header);
-  create_eth_header((struct eth_header *) eth_hdr, dst_mac, src_mac, htons(ETHERNET_TYPE_IPV4));
+  create_eth_header((struct eth_header *) eth_hdr, dst_mac, src_mac,
+                    htons(ETHERNET_TYPE_IPV4));
   create_ip_header((struct ip_header *) ip_hdr, dst_ip_addr, src_ip_addr,
-                   IP_PRO_ICMP, sizeof(struct icmp_header));
+                   IP_PRO_ICMP,
+                   84);
   create_icmp_header((struct icmp_header*) icmp_hdr, ICMP_ECHO_REPLY, 0,
                      ntohs(icmp_in->id), ntohs(icmp_in->seq_num));
 }
@@ -428,6 +430,8 @@ void arp_thread(void *in, void **out) {
           create_icmp_response(output_packet, eth_hdr_in->src_mac,
                                ntohl(ip_hdr_in->ip_src),
                                c.mac, ai->ip_addr, icmp_hdr_in);
+          memcpy((void*) ((uint8_t*)icmp_hdr_in + sizeof(struct icmp_header)),
+                 (input_packet + sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct icmp_header)), 56);
           print_eth_header(eth_hdr_out);
           print_ip_header(ip_pkt_out);
           print_icmp_header(icmp_hdr_out);          

@@ -118,12 +118,12 @@
 
 // new type declaration
 struct e1000_dev {
-  struct nk_net_dev *netdev;
   // for our linked list of virtio devices
-  struct list_head e1000_node;
+  struct nk_net_dev *netdev;
   // a pointer to the base class
-  struct pci_dev *pci_dev;
+  struct list_head e1000_node;
   // pci interrupt and interupt vector
+  struct pci_dev *pci_dev;
   uint8_t   pci_intr;  // number on bus
   uint8_t   intr_vec;  // number we will see
   // Where registers are mapped into the I/O address space
@@ -135,9 +135,9 @@ struct e1000_dev {
 };
 
 struct e1000_ring {
-  void     *ring_buffer;
-  uint8_t  head_prev;
-  uint8_t  tail_pos;
+  void *ring_buffer;
+  uint8_t head_prev;
+  uint8_t tail_pos;
   int count;
   void *packet_buffer;
   int blocksize;
@@ -187,27 +187,29 @@ struct e1000_tx_desc {
   uint16_t special;
 } __attribute__((packed)); 
 
-struct e1000_desc_map {
-  /* uint8_t  *src_addr; */
-  /* uint8_t  dst_mac[6]; */
-  /* uint64_t size; */
-  void (*callback)(void *context);
-  void *context;
+struct e1000_fn_map {
+  void (*callback)(void *);
+  uint64_t *context;
 };
 
+struct e1000_map_ring {
+  struct e1000_fn_map *ring;
+  // head and tail positions of the fn_map ring queue
+  uint64_t head_pos;
+  uint64_t tail_pos;
+  uint64_t ring_size;
+};
+  
 struct e1000_state {
-  struct e1000_ring *rx_ring;
-  struct e1000_ring *tx_ring;
   char name[DEV_NAME_LEN];
-  struct e1000_dev *dev;
   uint64_t mac_addr;
-  struct e1000_desc_map *outring; // circular queue of outgoing packets
-  struct e1000_desc_map *inring; // circular queue of incoming packets
-  uint64_t outhead;
-  uint64_t outtail;
-  uint64_t inhead;
-  uint64_t intail;
-    
+  struct e1000_dev *dev;
+  struct e1000_ring *tx_ring;
+  struct e1000_ring *rx_ring;
+  // a circular queue mapping between callback function and tx descriptor
+  struct e1000_map_ring *tx_map;
+  // a circular queue mapping between callback funtion and rx descriptor
+  struct e1000_map_ring *rx_map;
 };
 
 // function declaration

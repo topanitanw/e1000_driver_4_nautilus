@@ -1,7 +1,7 @@
 /*
  * Automatically generated C config: don't edit
  * Nautilus version: 
- * Sat Apr 29 18:20:54 2017
+ * Wed May  3 19:34:15 2017
  */
 #define AUTOCONF_INCLUDED
 
@@ -86,7 +86,10 @@
 #undef NAUT_CONFIG_DEBUG_BARRIER
 #undef NAUT_CONFIG_DEBUG_NUMA
 #undef NAUT_CONFIG_DEBUG_VIRTUAL_CONSOLE
-#undef NAUT_CONFIG_DEBUG_DEV
+#define NAUT_CONFIG_DEBUG_DEV 1
+#undef NAUT_CONFIG_DEBUG_CHARDEV
+#undef NAUT_CONFIG_DEBUG_BLKDEV
+#define NAUT_CONFIG_DEBUG_NETDEV 1
 #undef NAUT_CONFIG_DEBUG_FILESYSTEM
 
 /*

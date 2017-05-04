@@ -92,13 +92,13 @@ int nk_net_dev_get_characteristics(struct nk_net_dev *dev, struct nk_net_dev_cha
 
 static void generic_send_callback(void *context)
 {
-  DEBUG("generic send callback for %p\n",context);
+  DEBUG("generic send callback for 0x%p\n",context);
   *(uint64_t *)context = 1;
 }
 
 static void generic_receive_callback(void *context)
 {
-  DEBUG("generic receive callback for %p\n",context);
+  DEBUG("generic receive callback for 0x%p\n",context);
   *(uint64_t *)context = 1;
 }
 

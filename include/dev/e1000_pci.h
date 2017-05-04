@@ -38,7 +38,7 @@
 #define RDH_OFFSET            0x2810   // receive descriptor head
 #define RDT_OFFSET            0x2818   // receive descriptor tail
 #define RCTL_OFFSET           0x0100   // receive control
-#define RDTR_OFFSET           0x2820   // receive delay timer
+#define E1000_RDTR_OFFSET     0x2820   // receive delay timer
 #define E1000_RSRPD_OFFSET    0x02C00  // receive small packet detect interrupt r/w
 
 #define E1000_TPT_OFFSET      0x40D4   // total package transmit
@@ -59,6 +59,8 @@
 #define E1000_IMC_OFFSET      0x000D8  /* interrupt mask clear */
 
 #define E1000_TIDV_OFFSET     0x03820  /* transmit interrupt delay value r/w */
+
+
 // PCI CONFIG SPACE ************************************
 #define INTEL_VENDOR_ID       0x8086
 #define E1000_DEVICE_ID       0x100E
@@ -102,8 +104,12 @@
 #define E1000_ICR_TXDW         1          /* transmit descriptor written back */
 #define E1000_ICR_TXQE         (1 << 1)   /* transmit queue empty */
 #define E1000_ICR_TXD_LOW      (1 << 15)  /* transmit descriptor low threshold hit */
-#define E1000_ICR_SRPD         (1 << 16)  /* small receive packet detected */
 
+#define E1000_ICR_SRPD         (1 << 16)  /* small receive packet detected */
+#define E1000_ICR_RXT0         (1 << 7)   /* receiver timer interrupt */
+#define E1000_ICR_RXO          (1 << 6)   /* receive overrun */
+#define E1000_ICR_LSC          (1 << 2)   /* link state change */
+    
 // VARIABLE CONSTANTS *************************************
 /* these may need to dynamically change for different machines
    (for example, to allow buffer sizes to reflect mem availabilty)

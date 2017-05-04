@@ -47,33 +47,33 @@
 
 const uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
-int inline compare_mac(uint8_t* mac1, uint8_t* mac2) {
+inline int compare_mac(uint8_t* mac1, uint8_t* mac2) {
   return ((mac1[0] == mac2[0]) && (mac1[1] == mac2[1]) && \
           (mac1[2] == mac2[2]) && (mac1[3] == mac2[3]) && \
           (mac1[4] == mac2[4]) && (mac1[5] == mac2[5]));
 }
 
-uint16_t inline htons(uint16_t v) {
+inline uint16_t htons(uint16_t v) {
   return (v >> 8) | (v << 8);
 }
 
-uint32_t inline htonl(uint32_t v) {
+inline uint32_t htonl(uint32_t v) {
   return htons(v >> 16) | (htons((uint16_t) v) << 16);
 }
 
-uint64_t inline htonll(uint64_t v) {
+inline uint64_t htonll(uint64_t v) {
   return htonl(v >> 32) | ((uint64_t) htonl((uint32_t) v) << 32);
 }
 
-uint16_t inline ntohs(uint16_t v) {
+inline uint16_t ntohs(uint16_t v) {
   return htons(v);
 }
 
-uint32_t inline ntohl(uint32_t v) {
+inline uint32_t ntohl(uint32_t v) {
   return htonl(v);
 }
 
-uint64_t inline ntohll(uint64_t v) {
+inline uint64_t ntohll(uint64_t v) {
   return htonll(v);
 }
 
@@ -356,10 +356,10 @@ void print_icmp_header(struct icmp_header* pkt) {
 void arp_thread(void *in, void **out) {
   DEBUG("arp_thread function ------------------------------|\n");
   struct arp_info * ai = (struct arp_info *)in;
-  DEBUG("ai = 0x%p\n",ai);
+  DEBUG("ai = 0x%p\n", ai);
   struct nk_net_dev_characteristics c;
+  DEBUG("calling nk_net_dev_get_characteristics &c: 0x%p|\n", &c);
   nk_net_dev_get_characteristics(ai->netdev, &c);
-  DEBUG("Can receive %d bytes\n", c.max_tu);
   uint8_t input_packet[c.max_tu];
   DEBUG("arp_thread before while ------------------------------\n");
   while (1) { 

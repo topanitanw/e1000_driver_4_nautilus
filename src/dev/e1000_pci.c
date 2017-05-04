@@ -168,10 +168,13 @@ static int e1000_init_receive_ring(int blocksize, int rx_dsc_count, struct e1000
   DEBUG("RX BUFFER AT %p\n",RXD_RING_BUFFER); // we need this to be < 4GB
 
   // store the address of the memory in TDBAL/TDBAH
-  WRITE(state->dev, RDBAL_OFFSET, (uint32_t)(0x00000000ffffffff & (uint64_t) RXD_RING_BUFFER));
-  WRITE(state->dev, RDBAH_OFFSET, (uint32_t)((0xffffffff00000000 & (uint64_t) RXD_RING_BUFFER) >> 32));
+  WRITE(state->dev, RDBAL_OFFSET,
+        (uint32_t)(0x00000000ffffffff & (uint64_t) RXD_RING_BUFFER));
+  WRITE(state->dev, RDBAH_OFFSET,
+        (uint32_t)((0xffffffff00000000 & (uint64_t) RXD_RING_BUFFER) >> 32));
   DEBUG("rd_buffer=0x%016lx, RDBAL=0x%08x, RDBAH=0x%08x\n",
-        RXD_RING_BUFFER, READ(state->dev, RDBAL_OFFSET), READ(state->dev, RDBAH_OFFSET));
+        RXD_RING_BUFFER, READ(state->dev, RDBAL_OFFSET),
+        READ(state->dev, RDBAH_OFFSET));
   // write rdlen
   WRITE(state->dev, RDLEN_OFFSET, rd_buff_size);
   // write the rdh, rdt with 0
@@ -729,9 +732,8 @@ int e1000_pci_init(struct naut_info * naut)
   status = READ_MEM(state->dev, E1000_IMS_OFFSET);
   DEBUG("IMS: %d\n", status);
   status = READ_MEM(state->dev, E1000_ICR_OFFSET);
-  DEBUG("*** e1000 ICR = 0x%08x TXQE 0x%08x\n", status, E1000_ICR_TXQE & status);
-  DEBUG("*** e1000 ICR = 0x%08x TXD_LOW 0x%08x\n", status, E1000_ICR_TXD_LOW & status);
-  DEBUG("*** e1000 ICR = 0x%08x TXDW 0x%08x\n", status, E1000_ICR_TXDW & status);
+  DEBUG("ICR = 0x%08x TXQE 0x%08x TXD_LOW 0x%08x TXDW 0x%08x\n",
+        E1000_ICR_TXQE & status, E1000_ICR_TXD_LOW & status, E1000_ICR_TXDW & status);
   e1000_init_transmit_ring(TX_BLOCKSIZE, TX_DSC_COUNT, state);
   e1000_init_receive_ring(RX_BLOCKSIZE, RX_DSC_COUNT, state);
   // return 0;

@@ -68,7 +68,7 @@
 #define E1000_STATUS_OFFSET   0x00008  /* Device Status - RO */
 
 // REGISTER BIT MASKS **********************************
-// E1000 Receive Register 
+// E1000 Receive Control Register 
 #define RCTL_EN                         (1 << 1)    // Receiver Enable
 #define RCTL_SBP                        (1 << 2)    // Store Bad Packets
 #define RCTL_UPE                        (1 << 3)    // Unicast Promiscuous Enabled
@@ -76,9 +76,9 @@
 #define RCTL_LPE                        (1 << 5)    // Long Packet Reception Enable
 #define RCTL_LBM_NONE                   (0 << 6)    // No Loopback
 #define RCTL_LBM_PHY                    (3 << 6)    // PHY or external SerDesc loopback
-#define RTCL_RDMTS_HALF                 (0 << 8)    // Free Buffer Threshold is 1/2 of RDLEN
-#define RTCL_RDMTS_QUARTER              (1 << 8)    // Free Buffer Threshold is 1/4 of RDLEN
-#define RTCL_RDMTS_EIGHTH               (2 << 8)    // Free Buffer Threshold is 1/8 of RDLEN
+#define RCTL_RDMTS_HALF                 (0 << 8)    // Free Buffer Threshold is 1/2 of RDLEN
+#define RCTL_RDMTS_QUARTER              (1 << 8)    // Free Buffer Threshold is 1/4 of RDLEN
+#define RCTL_RDMTS_EIGHTH               (2 << 8)    // Free Buffer Threshold is 1/8 of RDLEN
 #define RCTL_MO_36                      (0 << 12)   // Multicast Offset - bits 47:36
 #define RCTL_MO_35                      (1 << 12)   // Multicast Offset - bits 46:35
 #define RCTL_MO_34                      (2 << 12)   // Multicast Offset - bits 45:34
@@ -92,10 +92,12 @@
 #define RCTL_SECRC                      (1 << 26)   // Strip Ethernet CRC
  
 // Buffer Sizes
+// RCTL.BSEX = 0
 #define RCTL_BSIZE_256                  (3 << 16)
 #define RCTL_BSIZE_512                  (2 << 16)
 #define RCTL_BSIZE_1024                 (1 << 16)
 #define RCTL_BSIZE_2048                 (0 << 16)
+// RCTL.BSEX = 1
 #define RCTL_BSIZE_4096                 ((3 << 16) | (1 << 25))
 #define RCTL_BSIZE_8192                 ((2 << 16) | (1 << 25))
 #define RCTL_BSIZE_16384                ((1 << 16) | (1 << 25))
@@ -114,13 +116,17 @@
 /* these may need to dynamically change for different machines
    (for example, to allow buffer sizes to reflect mem availabilty)
 */
-#define TX_DSC_COUNT          64
+#define TX_DSC_COUNT          10
 #define TX_BLOCKSIZE          256 // bytes available per DMA block
 #define RX_DSC_COUNT          64  // equal to DMA block count
 #define RX_BLOCKSIZE          256 // bytes available per DMA block
 
-#define MIN_TU                48    /* minimum transfer unit */
-#define MAX_TU                1522  /* maximum transfer unit */
+// Data sheet from page 36
+// 16384 bytes is from the maximum packet buffer size that e1000 can receive.
+// 16288 bytes is the maximum packet size that e1000 can send in theory.
+// Ethernet standard MTU is 1500 bytes.
+#define MAX_TU                16384 /* maximum transmission unit */
+#define MIN_TU                48    /* minimum transmission unit */
 
 // new type declaration
 struct e1000_dev {
@@ -208,7 +214,7 @@ struct e1000_map_ring {
   
 struct e1000_state {
   char name[DEV_NAME_LEN];
-  uint64_t mac_addr;
+  uint8_t mac_addr[6];
   struct e1000_dev *dev;
   struct e1000_ring *tx_ring;
   struct e1000_ring *rx_ring;

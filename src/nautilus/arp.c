@@ -53,28 +53,28 @@ inline int compare_mac(uint8_t* mac1, uint8_t* mac2) {
           (mac1[4] == mac2[4]) && (mac1[5] == mac2[5]));
 }
 
-inline uint16_t htons(uint16_t v) {
+inline uint16_t hton16(uint16_t v) {
   return (v >> 8) | (v << 8);
 }
 
-inline uint32_t htonl(uint32_t v) {
-  return htons(v >> 16) | (htons((uint16_t) v) << 16);
+inline uint32_t hton32(uint32_t v) {
+  return hton16(v >> 16) | (hton16((uint16_t) v) << 16);
 }
 
-inline uint64_t htonll(uint64_t v) {
-  return htonl(v >> 32) | ((uint64_t) htonl((uint32_t) v) << 32);
+inline uint64_t hton64(uint64_t v) {
+  return hton32(v >> 32) | ((uint64_t) hton32((uint32_t) v) << 32);
 }
 
-inline uint16_t ntohs(uint16_t v) {
-  return htons(v);
+inline uint16_t ntoh16(uint16_t v) {
+  return hton16(v);
 }
 
-inline uint32_t ntohl(uint32_t v) {
-  return htonl(v);
+inline uint32_t ntoh32(uint32_t v) {
+  return hton32(v);
 }
 
-inline uint64_t ntohll(uint64_t v) {
-  return htonll(v);
+inline uint64_t ntoh64(uint64_t v) {
+  return hton64(v);
 }
 
 // convert a string of an ip address to uint32_t
@@ -125,14 +125,14 @@ void create_eth_header(struct eth_header *hdr, uint8_t *dst_mac,
 void create_arp_content(struct arp_packet *pkt, uint16_t opcode,
                        uint8_t *sender_mac, uint32_t sender_ip, 
                        uint8_t *target_mac, uint32_t target_ip) {
-  pkt->hw_type = htons(ARP_HW_TYPE_ETHERNET);
-  pkt->pro_type = htons(ARP_PRO_TYPE_IPV4);
+  pkt->hw_type = hton16(ARP_HW_TYPE_ETHERNET);
+  pkt->pro_type = hton16(ARP_PRO_TYPE_IPV4);
   pkt->hw_len = MAC_LEN;
   pkt->pro_len = IPV4_LEN;
-  pkt->opcode = htons(opcode);
-  pkt->sender_ip_addr = htonl(sender_ip);
+  pkt->opcode = hton16(opcode);
+  pkt->sender_ip_addr = hton32(sender_ip);
   memcpy((void*)pkt->sender_mac, sender_mac, MAC_LEN);
-  pkt->target_ip_addr = htonl(target_ip);
+  pkt->target_ip_addr = hton32(target_ip);
   switch (opcode) {
     case ARP_OPCODE_REPLY:
       memcpy((void*)pkt->target_mac, target_mac, MAC_LEN);
@@ -149,7 +149,7 @@ void create_arp_response(uint8_t *pkt, uint8_t *dst_mac,
                          uint32_t src_ip_addr) {
   struct eth_header *eth_hdr = (struct eth_header*) pkt;
   struct arp_packet *arp_pkt = (struct arp_packet*) (pkt + sizeof(struct eth_header));  
-  create_eth_header(eth_hdr, dst_mac, src_mac, htons(ETHERNET_TYPE_ARP));
+  create_eth_header(eth_hdr, dst_mac, src_mac, hton16(ETHERNET_TYPE_ARP));
   create_arp_content(arp_pkt, ARP_OPCODE_REPLY,
                     src_mac, src_ip_addr, dst_mac, dst_ip_addr);
 }
@@ -158,9 +158,9 @@ void create_icmp_header(struct icmp_header *pkt, uint8_t type,
                         uint8_t code, uint16_t id, uint16_t seq_num) {
   pkt->type = type;
   pkt->code = code;
-  pkt->id = ntohs(id);
-  pkt->seq_num = ntohs(seq_num);
-  pkt->checksum = checksum((void *)pkt, sizeof(struct icmp_header));
+  pkt->id = ntoh16(id);
+  pkt->seq_num = ntoh16(seq_num);
+  pkt->checksum = checksum((void *)pkt, sizeof(struct icmp_header) + 48 + 8);
 }
 
 void create_ip_header(struct ip_header *pkt, uint32_t dst_ip_addr,
@@ -170,13 +170,13 @@ void create_ip_header(struct ip_header *pkt, uint32_t dst_ip_addr,
   pkt->version = IP_VER_IPV4;
   pkt->tos = 0x00;              /* unused */
   /* size of the datagram = size of ip header + data */
-  pkt->len = ntohs(sizeof(struct ip_header) + data_len);
+  pkt->len = ntoh16(sizeof(struct ip_header) + data_len);
   pkt->id = 0;
-  pkt->offset = 0;// ntohs(IP_FLAG_DF);
+  pkt->offset = 0;// ntoh16(IP_FLAG_DF);
   pkt->ttl = 64;                /* from icmp of ping command */
   pkt->protocol = IP_PRO_ICMP;
-  pkt->ip_src = ntohl(src_ip_addr);
-  pkt->ip_dst = ntohl(dst_ip_addr);
+  pkt->ip_src = ntoh32(src_ip_addr);
+  pkt->ip_dst = ntoh32(dst_ip_addr);
   pkt->checksum = checksum((void*) pkt, IP_HEADER_LEN);
 }
 
@@ -187,12 +187,12 @@ void create_icmp_response(uint8_t *pkt, uint8_t *dst_mac,
   uint8_t *ip_hdr = pkt + sizeof(struct eth_header);
   uint8_t *icmp_hdr = pkt + sizeof(struct eth_header) + sizeof(struct ip_header);
   create_eth_header((struct eth_header *) eth_hdr, dst_mac, src_mac,
-                    htons(ETHERNET_TYPE_IPV4));
+                    hton16(ETHERNET_TYPE_IPV4));
   create_ip_header((struct ip_header *) ip_hdr, dst_ip_addr, src_ip_addr,
                    IP_PRO_ICMP,
-                   84);
+                   64);
   create_icmp_header((struct icmp_header*) icmp_hdr, ICMP_ECHO_REPLY, 0,
-                     ntohs(icmp_in->id), ntohs(icmp_in->seq_num));
+                     ntoh16(icmp_in->id), ntoh16(icmp_in->seq_num));
 }
 
 void mac_inttostr(uint8_t *mac, char* buf, int len) {
@@ -226,11 +226,12 @@ void dump_packet(uint8_t *p, int len)
     if((i+1)%8) 
       buf[3*i+2] = ',';
     else
-      buf[3*i+2] = ' ';
+      buf[3*i+2] = '_';
   }
   buf[len*3] = 0;
     
-  DEBUG("Dump packet content %d bytes: %s\n", len, buf);
+  DEBUG("Dump packet content %d bytes: \n", len);
+  DEBUG("%s\n", buf);
 }
 
 void print_eth_header(struct eth_header* pkt) {
@@ -244,7 +245,7 @@ void print_eth_header(struct eth_header* pkt) {
   mac_inttostr(pkt->src_mac, buf, sizeof(buf));
   DEBUG("\t src_addr: %s\n",buf);
   
-  uint16_t host16 = ntohs(pkt->eth_type);
+  uint16_t host16 = ntoh16(pkt->eth_type);
   switch(host16) {
     case(ETHERNET_TYPE_ARP):
       DEBUG("\t type = 0x%04x : ARP\n", host16);
@@ -265,7 +266,7 @@ void print_eth_header(struct eth_header* pkt) {
 
 void print_arp_packet(struct arp_packet* pkt) {
   DEBUG("arp packet ------------------------------\n");
-  uint16_t host16 = ntohs(pkt->hw_type);
+  uint16_t host16 = ntoh16(pkt->hw_type);
   switch(host16) {
     case(ARP_HW_TYPE_ETHERNET):
       DEBUG("\t hw_type = %04x : ETHERNET\n", host16);
@@ -273,13 +274,13 @@ void print_arp_packet(struct arp_packet* pkt) {
     default:
       DEBUG("\t hw_type = %04x : UNKNOWN\n", host16);
   }
-  host16 = ntohs(pkt->pro_type);
+  host16 = ntoh16(pkt->pro_type);
   DEBUG("\t pro_type = 0x%04x ; protocol type IPv4: 0x%04x\n",
         host16, ARP_PRO_TYPE_IPV4);
   DEBUG("\t hw_len = 0x%x; pro_len = 0x%x\n",
         pkt->hw_len, pkt->pro_len);
 
-  host16 = ntohs(pkt->opcode);
+  host16 = ntoh16(pkt->opcode);
   switch(host16) {
     case(ARP_OPCODE_REQUEST):
       DEBUG("\t opcode = 0x%04x : REQUEST\n", host16);
@@ -296,13 +297,13 @@ void print_arp_packet(struct arp_packet* pkt) {
   mac_inttostr(pkt->sender_mac, buf, sizeof(buf));
   DEBUG("\t sender_mac: %s\n",buf);
 
-  ip_inttostr(ntohl(pkt->sender_ip_addr), buf, sizeof(buf));
+  ip_inttostr(ntoh32(pkt->sender_ip_addr), buf, sizeof(buf));
   DEBUG("\t sender_ip_addr: %s (0x%x)\n", buf, pkt->sender_ip_addr);
 
   mac_inttostr(pkt->target_mac, buf, sizeof(buf));  
   DEBUG("\t target_mac: %s\n", buf);
 
-  ip_inttostr(ntohl(pkt->target_ip_addr), buf, sizeof(buf));
+  ip_inttostr(ntoh32(pkt->target_ip_addr), buf, sizeof(buf));
   DEBUG("\t target_ip_addr: %s (0x%x) \n", buf,  pkt->target_ip_addr);  
 }
 
@@ -312,8 +313,8 @@ void print_ip_header(struct ip_header* pkt) {
   DEBUG("\t header length: 0x%02x\n", pkt->hl);
   DEBUG("\t version: 0x%02x\n", pkt->version);
   DEBUG("\t type of service: 0x%02x\n", pkt->tos);
-  DEBUG("\t total length: %d\n", ntohs(pkt->len));
-  DEBUG("\t id: %d 0x%04x\n", ntohs(pkt->id));
+  DEBUG("\t total length: %d\n", ntoh16(pkt->len));
+  DEBUG("\t id: %d 0x%04x\n", ntoh16(pkt->id));
   DEBUG("\t flag: 0x%04x\n", pkt->offset & IP_FLAG_MASK);
   DEBUG("\t offset: 0x%04x\n", pkt->offset);
   DEBUG("\t time to live: 0x%02x\n", pkt->ttl);      
@@ -323,10 +324,10 @@ void print_ip_header(struct ip_header* pkt) {
   char buf[25];
   memset(buf, 0, sizeof(buf));
 
-  ip_inttostr(ntohl(pkt->ip_src), buf, sizeof(buf));
+  ip_inttostr(ntoh32(pkt->ip_src), buf, sizeof(buf));
   DEBUG("\t ip src %s\n", buf);
 
-  ip_inttostr(ntohl(pkt->ip_dst), buf, sizeof(buf));
+  ip_inttostr(ntoh32(pkt->ip_dst), buf, sizeof(buf));
   DEBUG("\t ip dst %s\n", buf);
 }
 
@@ -349,8 +350,20 @@ void print_icmp_header(struct icmp_header* pkt) {
   DEBUG("\t code: 0x%02x\n", pkt->code);
   DEBUG("\t checksum: 0x%04x cal 0x%04x\n",
         pkt->checksum, checksum((void *)pkt, sizeof(struct icmp_header)));
-  DEBUG("\t id: 0x%04x\n", ntohs(pkt->id));
-  DEBUG("\t seq_num: 0x%04x\n", ntohs(pkt->seq_num));
+  DEBUG("\t id: 0x%04x\n", ntoh16(pkt->id));
+  DEBUG("\t seq_num: 0x%04x\n", ntoh16(pkt->seq_num));
+}
+
+void print_udp_header(struct udp_header* pkt) {
+  DEBUG("udp message -----------------------------------\n");
+  DEBUG("\t src port %d\n", ntoh16(pkt->src_port));
+  DEBUG("\t dst port %d\n", ntoh16(pkt->dst_port));
+  uint16_t pkt_len = ntoh16(pkt->length);
+  DEBUG("\t length %d\n", pkt_len);
+  DEBUG("\t checksum 0x%04x\n", ntoh16(pkt->checksum));
+  char* pkt_data = (uint8_t *)pkt + sizeof(*pkt);
+  pkt_data[pkt_len+1] = '\0';
+  DEBUG("\t data: %s\n", pkt_data);
 }
 
 void arp_thread(void *in, void **out) {
@@ -360,7 +373,7 @@ void arp_thread(void *in, void **out) {
   struct nk_net_dev_characteristics c;
   DEBUG("calling nk_net_dev_get_characteristics &c: 0x%p|\n", &c);
   nk_net_dev_get_characteristics(ai->netdev, &c);
-  uint8_t input_packet[c.max_tu];
+  uint8_t input_packet[2*1024];
   DEBUG("arp_thread before while ------------------------------\n");
   while (1) { 
     // wait to receive a packet - should check errors
@@ -370,76 +383,89 @@ void arp_thread(void *in, void **out) {
     dump_packet(input_packet, 24);
     struct eth_header *eth_hdr_in = (struct eth_header*) input_packet;
     // if(input packet is an ARP packet its a request && it matches ai->ip_addr)
-    print_eth_header(eth_hdr_in);
+    /* print_eth_header(eth_hdr_in); */
+    DEBUG("ETHERNET_TYPE_ARP: %d\n",
+          ntoh16(eth_hdr_in->eth_type) == ETHERNET_TYPE_ARP);
     DEBUG("if it is my packet ------------------------------\n");
     DEBUG("compare broadcast %d\n",
           compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC));
     DEBUG("compare dst %d\n",
           compare_mac(eth_hdr_in->dst_mac, c.mac));
-    
     if (compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) ||
         compare_mac(eth_hdr_in->dst_mac, c.mac)) {
-      if (ntohs(eth_hdr_in->eth_type) == ETHERNET_TYPE_ARP) {
-        /* DEBUG("ntohs(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST %d\n", */
-        /*       ntohs(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST); */
-        /* DEBUG("ntohl(arp_pkt_in->target_ip_addr) == ai->ip_addr %d\n", */
-        /*       ntohl(arp_pkt_in->target_ip_addr) == ai->ip_addr);         */
+      if (ntoh16(eth_hdr_in->eth_type) == ETHERNET_TYPE_ARP) {
+        /* DEBUG("ntoh16(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST %d\n", */
+        /*       ntoh16(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST); */
+        /* DEBUG("ntoh32(arp_pkt_in->target_ip_addr) == ai->ip_addr %d\n", */
+        /*       ntoh32(arp_pkt_in->target_ip_addr) == ai->ip_addr);         */
         struct arp_packet *arp_pkt_in = (struct arp_packet*) (input_packet+sizeof(struct eth_header));
-        if ((ntohl(arp_pkt_in->target_ip_addr) == ai->ip_addr) &&
-            (ntohs(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST)) {
-          DEBUG("arp request packet ----------------------------------------\n");
+        if ((ntoh32(arp_pkt_in->target_ip_addr) == ai->ip_addr) &&
+            (ntoh16(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST)) {
+          /* DEBUG("arp request packet ----------------------------------------\n"); */
           uint8_t output_packet[c.max_tu];
           // construct an ARP reply in output_packet
-          struct eth_header *eth_hdr_out = (struct eth_header*) output_packet;
-          struct arp_packet *arp_pkt_out = (struct arp_packet*) (output_packet + sizeof(struct eth_header));
-          DEBUG("create an arp response\n");
+          /* struct eth_header *eth_hdr_out = (struct eth_header*) output_packet; */
+          /* struct arp_packet *arp_pkt_out = (struct arp_packet*) (output_packet + sizeof(struct eth_header)); */
+          /* DEBUG("create an arp response\n"); */
           create_arp_response(output_packet, eth_hdr_in->src_mac,
-                              ntohl(arp_pkt_in->sender_ip_addr),
+                              ntoh32(arp_pkt_in->sender_ip_addr),
                               c.mac, ai->ip_addr);
-          print_eth_header(eth_hdr_out);
-          print_arp_packet(arp_pkt_out);
+          
+          /* print_eth_header(eth_hdr_out); */
+          /* print_arp_packet(arp_pkt_out); */
           DEBUG("sending the arp response\n");
           nk_net_dev_send_packet(ai->netdev,
                                  output_packet,
                                  sizeof(struct eth_header) + sizeof(struct arp_packet),
                                  NK_DEV_REQ_BLOCKING);
         }
-      } else if (ntohs(eth_hdr_in->eth_type) == ETHERNET_TYPE_IPV4) {
+      } else if (ntoh16(eth_hdr_in->eth_type) == ETHERNET_TYPE_IPV4) {
         struct ip_header *ip_hdr_in = (struct ip_header *)(input_packet + sizeof(struct eth_header));
-        DEBUG("ip protocol 0x%02x icmp protocol: 0x%02x \n",
-              ip_hdr_in->protocol, IP_PRO_ICMP);
-        DEBUG("is my ip %d pkt_in->ip_src: 0x%04x my ip: 0x%04x\n",
-              ntohl(ip_hdr_in->ip_dst) == ai->ip_addr,
-              ntohl(ip_hdr_in->ip_dst), ai->ip_addr);
-        struct icmp_header *icmp_hdr_in = (struct icmp_header *)(((uint8_t *)ip_hdr_in) + sizeof(struct ip_header));
-        DEBUG("is icmp request %d\n",
-              icmp_hdr_in->type == ICMP_ECHO_REQUEST);
-        
-        if ((ntohl(ip_hdr_in->ip_dst) == ai->ip_addr) &&
-            (ip_hdr_in->protocol == IP_PRO_ICMP) &&
-            (icmp_hdr_in->type == ICMP_ECHO_REQUEST)) {
-          uint8_t output_packet[c.max_tu];
-          struct eth_header *eth_hdr_out = (struct eth_header *) output_packet;
-          struct ip_header *ip_pkt_out = (struct ip_header *) (output_packet + sizeof(struct eth_header));
-          struct icmp_header *icmp_hdr_out = (struct icmp_header *) (output_packet + sizeof(struct eth_header) + sizeof(struct ip_header));
-          DEBUG("printing packet before tx\n");
-          char buf[30];
-          memset(buf, 0, sizeof(buf));
-          mac_inttostr(eth_hdr_in->src_mac, buf, sizeof(buf));
-          DEBUG("dst_mac: %s\n", buf);
-          create_icmp_response(output_packet, eth_hdr_in->src_mac,
-                               ntohl(ip_hdr_in->ip_src),
-                               c.mac, ai->ip_addr, icmp_hdr_in);
-          memcpy((void*) ((uint8_t*)icmp_hdr_in + sizeof(struct icmp_header)),
-                 (input_packet + sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct icmp_header)), 56);
-          print_eth_header(eth_hdr_out);
-          print_ip_header(ip_pkt_out);
-          print_icmp_header(icmp_hdr_out);          
-          nk_net_dev_send_packet(ai->netdev,
-                                 output_packet,
-                                 sizeof(struct eth_header) + sizeof(struct ip_header)
-                                 + sizeof(struct icmp_header),
-                                 NK_DEV_REQ_BLOCKING);          
+        /* DEBUG("ip protocol 0x%02x icmp protocol: 0x%02x \n", */
+        /*       ip_hdr_in->protocol, IP_PRO_ICMP); */
+        /* DEBUG("is my ip %d pkt_in->ip_src: 0x%04x my ip: 0x%04x\n", */
+        /*       ntoh32(ip_hdr_in->ip_dst) == ai->ip_addr, */
+        /*       ntoh32(ip_hdr_in->ip_dst), ai->ip_addr); */
+        DEBUG("IP_PRO_ICMP: %d\n", ip_hdr_in->protocol == IP_PRO_ICMP);
+        DEBUG("IP_PRO_UDP: %d\n", ip_hdr_in->protocol == IP_PRO_UDP);
+        if (ip_hdr_in->protocol == IP_PRO_ICMP) {
+          struct icmp_header *icmp_hdr_in = (struct icmp_header *)(((uint8_t *)ip_hdr_in) + sizeof(struct ip_header));
+          DEBUG("is icmp request %d\n", icmp_hdr_in->type == ICMP_ECHO_REQUEST); 
+          if ((ntoh32(ip_hdr_in->ip_dst) == ai->ip_addr) &&
+              (icmp_hdr_in->type == ICMP_ECHO_REQUEST)) {
+            uint8_t output_packet[c.max_tu];
+            /* struct eth_header *eth_hdr_out = (struct eth_header *) output_packet; */
+            /* struct ip_header *ip_pkt_out = (struct ip_header *) (output_packet + sizeof(struct eth_header)); */
+            struct icmp_header *icmp_hdr_out = (struct icmp_header *) (output_packet + sizeof(struct eth_header) + sizeof(struct ip_header));
+          
+            /* DEBUG("printing packet before tx\n"); */
+            /* char buf[30]; */
+            /* memset(buf, 0, sizeof(buf)); */
+            /* mac_inttostr(eth_hdr_in->src_mac, buf, sizeof(buf)); */
+            /* DEBUG("dst_mac: %s\n", buf); */
+            
+            memcpy((void*) ((uint8_t*)icmp_hdr_out + sizeof(struct icmp_header)),
+                   (input_packet + sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct icmp_header)), 48 + 8);
+            
+            create_icmp_response(output_packet, eth_hdr_in->src_mac,
+                                 ntoh32(ip_hdr_in->ip_src),
+                                 c.mac, ai->ip_addr, icmp_hdr_in);
+            /* print_eth_header(eth_hdr_out); */
+            /* print_ip_header(ip_pkt_out); */
+            /* print_icmp_header(icmp_hdr_out);           */
+            nk_net_dev_send_packet(ai->netdev,
+                                   output_packet,
+                                   sizeof(struct eth_header) + sizeof(struct ip_header)
+                                   + sizeof(struct icmp_header) + 56,
+                                   NK_DEV_REQ_BLOCKING);          
+          }
+        } else if (ip_hdr_in->protocol == IP_PRO_UDP) {
+          DEBUG("receive UDP\n");
+          struct ip_header* ip_hdr_in = (struct ip_header*)((uint8_t*)eth_hdr_in + sizeof(struct eth_header));
+          struct udp_header* udp_hdr_in = (struct udp_header*)((uint8_t*)ip_hdr_in + sizeof(struct ip_header));
+          print_eth_header(eth_hdr_in);
+          print_ip_header(ip_hdr_in);
+          print_udp_header(udp_hdr_in);
         }
       }
     }
@@ -456,7 +482,6 @@ int arp_init(struct naut_info * naut)
   }  
   // search for the device in netdev
   ai->netdev = nk_net_dev_find("e1000-0");
-
   if (!ai->netdev) { 
     ERROR("Cannot find the \"e1000-0\" ethernet adapter from nk_net_dev\n");
     return -1;

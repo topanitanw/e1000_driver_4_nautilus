@@ -46,9 +46,10 @@
 #define IP_VER_IPV6               6
 #define IP_TTL                    64             /* time to live */
 #define IP_FLAG_MASK              0xE000
-#define IP_FLAG_MF                0x2000            /* more fragment */
-#define IP_FLAG_DF                0x4000            /* no fragment */
-#define IP_PRO_ICMP               0x01           /* internet control message protocol */
+#define IP_FLAG_MF                0x2000         /* more fragment */
+#define IP_FLAG_DF                0x4000         /* no fragment */
+#define IP_PRO_ICMP               0x01           /* ICMP protocol */
+#define IP_PRO_UDP                0x11           /* udp protocol */
 
 // ARP frame
 #define ARP_HW_TYPE_ETHERNET      1              /* arp hardware type for ethernet */
@@ -56,17 +57,18 @@
 #define ARP_OPCODE_REQUEST        0x0001         /* arp opcode request */
 #define ARP_OPCODE_REPLY          0x0002         /* arp opcode reply */
 
-// ICMP message
+// Internet Control Message Protocol (ICMP) message
 #define ICMP_ECHO_REPLY           0
 #define ICMP_ECHO_REQUEST         8
 
 extern const uint8_t ARP_BROADCAST_MAC[6];
 
 // ethernet header
+// size = 18 bytes
 struct eth_header {
-  uint8_t  dst_mac[MAC_LEN];
-  uint8_t  src_mac[MAC_LEN];
-  uint16_t eth_type;
+  uint8_t  dst_mac[MAC_LEN];        /* destination mac address */
+  uint8_t  src_mac[MAC_LEN];        /* source mac address */
+  uint16_t eth_type;                /* ethernet type */
 } __packed;
 
 // IP header format
@@ -87,22 +89,40 @@ struct eth_header {
 // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 // size 20 bytes
 struct ip_header {
-  uint8_t  hl : 4; /* header length */
-  uint8_t  version : 4; /* version */
-  uint8_t  tos; /* type of service */
-  uint16_t len; /* total length */
-  
-  uint16_t id; /* identification */
-  /* uint16_t offset : 13; /\* fragment offset field *\/ */
-  /* uint8_t  flag : 3; /\* flags *\/ */
-  uint16_t offset;
-  uint8_t ttl; /* time to live */
-  uint8_t protocol; /* protocol */
-  uint16_t checksum; /* checksum */
-  uint32_t ip_src; /* source and dest address */
+  uint8_t  hl : 4;                     /* header length */
+  uint8_t  version : 4;                /* version */
+  uint8_t  tos;                        /* type of service */
+  uint16_t len;                        /* total length */
+  uint16_t id;                         /* identification */
+  uint16_t offset; 
+  uint8_t ttl;                         /* time to live */
+  uint8_t protocol;                    /* protocol */
+  uint16_t checksum;                   /* checksum */
+  uint32_t ip_src;                     /* source and dest address */
   uint32_t ip_dst;  
 } __packed;
- 
+
+// udp header
+//  0              15  16             31
+//  +--------+--------+--------+--------+
+//  |     Source      |   Destination   |
+//  |      Port       |      Port       |
+//  +--------+--------+--------+--------+
+//  |    Checksum     |                 |
+//  |    Coverage     |    Checksum     |
+//  +--------+--------+--------+--------+
+//  |                                   |
+//  :              Payload              :
+//  |                                   |
+//  +-----------------------------------+
+// size 8 bytes
+struct udp_header {
+  uint16_t src_port;                   /* source port */
+  uint16_t dst_port;                   /* destination port */
+  uint16_t length;                     /* length */
+  uint16_t checksum;                   /* checksum */
+} __packed;
+
 // Internet Protocol (IPv4) over Ethernet ARP packet
 struct arp_packet {
   uint16_t hw_type;                    /* hardware address */
@@ -124,17 +144,16 @@ struct arp_info {
 // icmp header
 // size = 8 without data
 struct icmp_header {
-  uint8_t type;                 /* type */
-  uint8_t code;                 /* code */
-  uint16_t checksum;            /* icmp header checksum */
-  uint16_t id;                  /* identifier */
-  uint16_t seq_num;             /* sequence number */
+  uint8_t type;                        /* type */
+  uint8_t code;                        /* code */
+  uint16_t checksum;                   /* icmp header checksum */
+  uint16_t id;                         /* identifier */
+  uint16_t seq_num;                    /* sequence number */
 } __packed;
-  
+
 // function definition
 void dump_packet(uint8_t *p, int len);
 int arp_init(struct naut_info *);
 int arp_deinit();
 
 #endif
-

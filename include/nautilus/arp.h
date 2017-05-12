@@ -32,6 +32,7 @@
 #define IPV4_LEN                  4              /* length of ipv4 in bytes */
 #define MAC_LEN                   6              /* length of mac address in bytes */
 #define IP_ADDRESS_STRING         "10.10.10.3"
+#define PORT_NUM                  5000
 
 // ethernet frame
 #define ETHERNET_TYPE_ARP         0x0806         /* ethernet type arp */
@@ -124,7 +125,7 @@ struct udp_header {
 } __packed;
 
 // Internet Protocol (IPv4) over Ethernet ARP packet
-struct arp_packet {
+struct arp_header {
   uint16_t hw_type;                    /* hardware address */
   uint16_t pro_type;                   /* protocol address */
   uint8_t hw_len;                      /* hardware address length */

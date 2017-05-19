@@ -30,8 +30,14 @@ struct nk_net_dev_characteristics {
     uint8_t  mac[6];
     uint64_t min_tu;
     uint64_t max_tu;
+    uint64_t (*packet_size_to_buffer_size)(uint64_t packet_size);
 };
 
+typedef enum {
+  NK_NET_DEV_STATUS_SUCCESS,
+  NK_NET_DEV_STATUS_ERROR
+} nk_net_dev_status_t;
+  
 struct nk_net_dev_int {
     // this must be first so it derives cleanly
     // from nk_dev_int
@@ -41,8 +47,8 @@ struct nk_net_dev_int {
     // an interface either succeeds (returns zero) or fails (returns -1)
     int (*get_characteristics)(void *state, struct nk_net_dev_characteristics *c);
     // non-blocking always.  -1 on error, otherwise return 0
-    int (*post_receive)(void *state, uint8_t *dest, uint64_t len, void (*callback)(void *context), void *context);
-    int (*post_send)(void *state, uint8_t *src, uint64_t len, void (*callback)(void *context), void *context);
+  int (*post_receive)(void *state, uint8_t *dest, uint64_t len, void (*callback)(nk_net_dev_status_t status, void *context), void *context);
+  int (*post_send)(void *state, uint8_t *src, uint64_t len, void (*callback)(nk_net_dev_status_t status, void *context), void *context);
 };
 
 

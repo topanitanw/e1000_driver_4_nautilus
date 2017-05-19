@@ -31,6 +31,7 @@
 #include <nautilus/naut_string.h>             // memset, memcpy
 #include <nautilus/netdev.h>
 #include <nautilus/printk.h>
+#include <nautilus/mm.h>                      // malloc
 #include <dev/pci.h>
 #include <dev/e1000_pci.h>
 #include <nautilus/arp.h>
@@ -450,10 +451,12 @@ void arp_thread(void *in, void **out) {
   DEBUG("ai = 0x%p\n", ai);
   struct nk_net_dev_characteristics c;
   DEBUG("calling nk_net_dev_get_characteristics &c: 0x%p|\n", &c);
+  // TODO use mtu for the packet size
+  // add the function pointer to return the buffer based on the data length
   nk_net_dev_get_characteristics(ai->netdev, &c);
-  uint32_t buffer_size = 2.5*1024;
-  uint8_t input_packet[buffer_size];
-  uint8_t output_packet[buffer_size];
+  uint64_t buffer_size = c.packet_size_to_buffer_size(c.max_tu);
+  uint8_t* input_packet = malloc(buffer_size);
+  uint8_t* output_packet = malloc(buffer_size);
   DEBUG("arp_thread before while ------------------------------\n");
   while (1) {
     memset(input_packet, 0, buffer_size);
@@ -493,14 +496,9 @@ void arp_thread(void *in, void **out) {
           nk_net_dev_send_packet(ai->netdev,
                                  output_packet,
                                  sizeof(struct eth_header) + sizeof(struct arp_header),
-                                 NK_DEV_REQ_BLOCKING);
+                                 NK_DEV_REQ_NONBLOCKING);
         }
       } else if (ntoh16(eth_hdr_in->eth_type) == ETHERNET_TYPE_IPV4) {
-        /* DEBUG("ip protocol 0x%02x icmp protocol: 0x%02x \n", */
-        /*       ip_hdr_in->protocol, IP_PRO_ICMP); */
-        /* DEBUG("is my ip %d pkt_in->ip_src: 0x%04x my ip: 0x%04x\n", */
-        /*       ntoh32(ip_hdr_in->ip_dst) == ai->ip_addr, */
-        /*       ntoh32(ip_hdr_in->ip_dst), ai->ip_addr); */
         DEBUG("IP_PRO_ICMP: %d\n", ip_hdr_in->protocol == IP_PRO_ICMP);
         DEBUG("IP_PRO_UDP: %d\n", ip_hdr_in->protocol == IP_PRO_UDP);
         if (ip_hdr_in->protocol == IP_PRO_ICMP) {
@@ -516,7 +514,7 @@ void arp_thread(void *in, void **out) {
             print_icmp_packet(output_packet);
             nk_net_dev_send_packet(ai->netdev, output_packet,
                                    sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct icmp_header) + 56,
-                                   NK_DEV_REQ_BLOCKING);
+                                   NK_DEV_REQ_NONBLOCKING);
           }
         } else if (ip_hdr_in->protocol == IP_PRO_UDP) {
           DEBUG("receive UDP\n");
@@ -526,10 +524,6 @@ void arp_thread(void *in, void **out) {
           char* udp_data_out = get_udp_data(output_packet);
           uint32_t data_in_len = strlen(udp_data_in);
           memcpy(udp_data_out, udp_data_in, data_in_len);
-          /* udp_data_out[0] = '|'; */
-          /* udp_data_out[data_in_len-1] = '|'; */
-          /* udp_data_out[data_in_len] = '\n';           */
-          /* udp_data_out[data_in_len+1] =  '\0'; */
           create_udp_response(output_packet, eth_hdr_in->src_mac,
                               ntoh32(ip_hdr_in->ip_src),
                               c.mac, ai->ip_addr, strlen(udp_data_out),
@@ -539,7 +533,7 @@ void arp_thread(void *in, void **out) {
           print_udp_packet(output_packet);
           nk_net_dev_send_packet(ai->netdev, output_packet,
                                  sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct udp_header) + strlen(udp_data_out),
-                                 NK_DEV_REQ_BLOCKING);
+                                 NK_DEV_REQ_NONBLOCKING);
         }
       }
     }

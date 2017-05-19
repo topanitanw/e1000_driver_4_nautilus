@@ -131,6 +131,15 @@
 #define E1000_RCTL_BSIZE_16384      ((1 << 16) | (1 << 25))
 #define E1000_RCTL_BSIZE_MASK       ~((3 << 16) | (1 << 25))
 
+#define E1000_RECV_BSIZE_256        256
+#define E1000_RECV_BSIZE_512        512
+#define E1000_RECV_BSIZE_1024       1024
+#define E1000_RECV_BSIZE_2048       2048
+#define E1000_RECV_BSIZE_4096       4096
+#define E1000_RECV_BSIZE_8192       8192
+#define E1000_RECV_BSIZE_16384      16384
+#define E1000_RECV_BSIZE_MAX        16384
+
 // interrupt bits of icr register
 #define E1000_ICR_TXDW              1          // transmit descriptor written back 
 #define E1000_ICR_TXQE              (1 << 1)   // transmit queue empty 
@@ -213,7 +222,7 @@ struct e1000_tx_desc {
 } __attribute__((packed)); 
 
 struct e1000_fn_map {
-  void (*callback)(void *);
+  void (*callback)(nk_net_dev_status_t, void *);
   uint64_t *context;
 };
 
@@ -235,6 +244,7 @@ struct e1000_state {
   struct e1000_map_ring *tx_map;
   // a circular queue mapping between callback funtion and rx descriptor
   struct e1000_map_ring *rx_map;
+  uint64_t rx_buffer_size;
 };
 
 // function declaration

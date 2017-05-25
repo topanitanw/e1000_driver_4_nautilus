@@ -168,13 +168,13 @@ struct e1000_dev {
   uint64_t  mem_end;
 };
 
-struct e1000_ring {
+struct e1000_desc_ring {
   void *ring_buffer;
-  uint8_t head_prev;
-  uint8_t tail_pos;
-  int count;
+  uint32_t head_prev;
+  uint32_t tail_pos;
+  uint32_t count;
   void *packet_buffer;
-  int blocksize;
+  uint32_t blocksize;
 };
 
 struct e1000_rx_desc {
@@ -227,19 +227,20 @@ struct e1000_fn_map {
 };
 
 struct e1000_map_ring {
-  struct e1000_fn_map *ring;
+  struct e1000_fn_map *map_ring;
   // head and tail positions of the fn_map ring queue
   uint64_t head_pos;
   uint64_t tail_pos;
-  uint64_t ring_size;
+  // the number of elements in the map ring buffer
+  uint64_t ring_len;
 };
   
 struct e1000_state {
   char name[DEV_NAME_LEN];
   uint8_t mac_addr[6];
   struct e1000_dev *dev;
-  struct e1000_ring *tx_ring;
-  struct e1000_ring *rx_ring;
+  struct e1000_desc_ring *tx_ring;
+  struct e1000_desc_ring *rxd_ring;
   // a circular queue mapping between callback function and tx descriptor
   struct e1000_map_ring *tx_map;
   // a circular queue mapping between callback funtion and rx descriptor
@@ -248,6 +249,10 @@ struct e1000_state {
 };
 
 // function declaration
+int e1000_post_send(void*, uint8_t*, uint64_t,
+                    void (*)(nk_net_dev_status_t, void*), void*);
+int e1000_post_receive(void*, uint8_t*, uint64_t,
+                       void (*)(nk_net_dev_status_t, void*), void*);
 int e1000_pci_init(struct naut_info * naut);
 int e1000_pci_deinit();
 

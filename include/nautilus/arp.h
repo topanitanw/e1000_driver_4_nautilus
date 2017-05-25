@@ -112,9 +112,7 @@ struct ip_header {
 //  |    Checksum     |                 |
 //  |    Coverage     |    Checksum     |
 //  +--------+--------+--------+--------+
-//  |                                   |
 //  :              Payload              :
-//  |                                   |
 //  +-----------------------------------+
 // size 8 bytes
 struct udp_header {

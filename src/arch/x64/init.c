@@ -64,6 +64,11 @@
 #include <dev/virtio_pci.h>
 #endif
 // Panitan
+#ifdef NAUT_CONFIG_E1000E_PCI
+#include <dev/e1000e_pci.h>
+#endif
+#include <nautilus/arp.h>
+
 #ifdef NAUT_CONFIG_E1000_PCI
 #include <dev/e1000_pci.h>
 #endif
@@ -376,9 +381,13 @@ init (unsigned long mbd,
 #ifdef NAUT_CONFIG_E1000_PCI
     e1000_pci_init(naut);
 #endif
+
+#ifdef NAUT_CONFIG_E1000E_PCI
+    e1000e_pci_init(naut);
+#endif    
 // Panitan for arp module in src/nautilus/arp.c
 // #ifdef NAUT_CONFIG_ARP
-    arp_init(naut);
+//    arp_init(naut);
 // #endif
     
     nk_fs_init();

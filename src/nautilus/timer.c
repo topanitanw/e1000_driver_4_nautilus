@@ -50,136 +50,136 @@ static struct list_head timer_list;
 
 
 struct nk_timer {
-    uint64_t          flags;    
-    uint64_t          time_ns;  // time relative to CPU reset
-    nk_thread_queue_t *waitq;   // used for non-spin waits
-    uint32_t          cpu;      // cpu to use for callback
-    void              (*callback)(void *priv);
-    void              *priv;
-    struct list_head  node;     // global list of active timers
-    volatile uint8_t  signaled; // 1 = timer has fired
+  uint64_t          flags;    
+  uint64_t          time_ns;  // time relative to CPU reset
+  nk_thread_queue_t *waitq;   // used for non-spin waits
+  uint32_t          cpu;      // cpu to use for callback
+  void              (*callback)(void *priv);
+  void              *priv;
+  struct list_head  node;     // global list of active timers
+  volatile uint8_t  signaled; // 1 = timer has fired
 };
 
 
 struct nk_timer *nk_alloc_timer()
 {
-    struct nk_timer *t = malloc(sizeof(struct nk_timer));
+  struct nk_timer *t = malloc(sizeof(struct nk_timer));
     
-    if (!t) { 
-	ERROR("Timer allocation failed\n");
-	return 0;
-    }
+  if (!t) { 
+    ERROR("Timer allocation failed\n");
+    return 0;
+  }
     
-    memset(t,0,sizeof(struct nk_timer));
+  memset(t,0,sizeof(struct nk_timer));
 
-    t->waitq = nk_thread_queue_create();
+  t->waitq = nk_thread_queue_create();
 
-    if (!t->waitq) { 
-	ERROR("Timer allocation of thread queue failed\n");
-	free(t);
-	return 0;
-    }
+  if (!t->waitq) { 
+    ERROR("Timer allocation of thread queue failed\n");
+    free(t);
+    return 0;
+  }
     
-    return t;
+  return t;
 }
 
 void nk_free_timer(struct nk_timer *t)
 {
-    nk_cancel_timer(t); // remove from list at least
-    nk_thread_queue_destroy(t->waitq);
-    free(t);
+  nk_cancel_timer(t); // remove from list at least
+  nk_thread_queue_destroy(t->waitq);
+  free(t);
 }
 
 int nk_set_timer(struct nk_timer *t, 
-		 uint64_t ns, 
-		 uint64_t flags,
-		 void (*callback)(void *p), 
-		 void *p,
-		 uint32_t cpu)
+                 uint64_t ns, 
+                 uint64_t flags,
+                 void (*callback)(void *p), 
+                 void *p,
+                 uint32_t cpu)
 {
-    STATE_LOCK_CONF;
+  STATE_LOCK_CONF;
     
-    t->flags = flags ;
-    t->time_ns = nk_sched_get_realtime() + ns;
-    t->callback = callback;
-    t->priv = p;
-    t->cpu = cpu;
-    t->signaled = 0;
+  t->flags = flags ;
+  t->time_ns = nk_sched_get_realtime() + ns;
+  t->callback = callback;
+  t->priv = p;
+  t->cpu = cpu;
+  t->signaled = 0;
 
-    STATE_LOCK();
-    list_add(&t->node, &timer_list);
-    STATE_UNLOCK();
+  STATE_LOCK();
+  list_add(&t->node, &timer_list);
+  STATE_UNLOCK();
     
-    DEBUG("Timer %p set: flags=0x%llx, time=%lluns, callback=%p priv=%p cpu=%lu, signaled=%d\n",	  t, t->flags, t->time_ns, t->callback, t->priv, t->cpu, t->signaled);
+  DEBUG("Timer %p set: flags=0x%llx, time=%lluns, callback=%p priv=%p cpu=%lu, signaled=%d\n",	  t, t->flags, t->time_ns, t->callback, t->priv, t->cpu, t->signaled);
 
-    return 0;
+  return 0;
 }
 
 int nk_cancel_timer(struct nk_timer *t)
 {
-    STATE_LOCK_CONF;
-    struct list_head *cur;
+  STATE_LOCK_CONF;
+  struct list_head *cur;
 
-    STATE_LOCK();
-    // We need to scan the list because the timer could have
-    // been canceled before this point or it could have fired
-    // in either case, it is *not* on the list
-    list_for_each(cur,&timer_list) {
-	if (cur==&(t->node)) {
-	    break;
-	}
-    }
+  STATE_LOCK();
+  // We need to scan the list because the timer could have
+  // been canceled before this point or it could have fired
+  // in either case, it is *not* on the list
+  list_for_each(cur,&timer_list) {
     if (cur==&(t->node)) {
-	DEBUG("Canceling timer %p\n",t);
-	list_del(cur);
-	// if anyone is waiting on it, it's their problem.... 
-    } else {
-	DEBUG("Not canceling timer %p as not in active list\n",t);
+	    break;
     }
-    STATE_UNLOCK();
-    t->signaled = 0;
-    return 0;
+  }
+  if (cur==&(t->node)) {
+    DEBUG("Canceling timer %p\n",t);
+    list_del(cur);
+    // if anyone is waiting on it, it's their problem.... 
+  } else {
+    DEBUG("Not canceling timer %p as not in active list\n",t);
+  }
+  STATE_UNLOCK();
+  t->signaled = 0;
+  return 0;
 }
 
 int nk_wait_timer(struct nk_timer *t)
 {
-    DEBUG("Wait timer %p\n",t);
-    while (!__sync_fetch_and_add(&t->signaled,0)) {
-	if (!(t->flags & TIMER_SPIN)) { 
+  DEBUG("Wait timer %p\n",t);
+  while (!__sync_fetch_and_add(&t->signaled,0)) {
+    if (!(t->flags & TIMER_SPIN)) { 
 	    DEBUG("Going to sleep on thread queue\n");
 	    nk_thread_queue_sleep(t->waitq);
-	} else {
+    } else {
 	    asm volatile ("pause");
-	}
-	DEBUG("Try again\n");
     }
-    return 0;
+    DEBUG("Try again\n");
+  }
+  return 0;
 }
 
 static int _sleep(uint64_t ns, int spin) 
 {
-    struct nk_timer * t = nk_alloc_timer();
+  struct nk_timer * t = nk_alloc_timer();
     
-    if (!t) { 
-        ERROR("Failed to allocate timer in sleep\n");
-	return -1;
-    }
+  if (!t) { 
+    ERROR("Failed to allocate timer in sleep\n");
+    return -1;
+  }
 
-    if (nk_set_timer(t, 
-		     nk_sched_get_realtime() + ns,
-		     spin ? TIMER_SPIN : 0,
-		     0,
-		     0,
-		     0)) { 
-	ERROR("Failed to set timer in sleep\n");
-	return -1;
-    }
+  if (nk_set_timer(t, 
+                   nk_sched_get_realtime() + ns,
+                   spin ? TIMER_SPIN : 0,
+                   0,
+                   0,
+                   0)) { 
+    ERROR("Failed to set timer in sleep\n");
+    return -1;
+  }
 		 
-    int rc = nk_wait_timer(t);
+  int rc = nk_wait_timer(t);
     
-    nk_free_timer(t);
+  nk_free_timer(t);
 
-    return rc;
+  return rc;
 }
 
 int nk_sleep(uint64_t ns) { return _sleep(ns,0); }
@@ -190,64 +190,64 @@ int nk_delay(uint64_t ns) { return _sleep(ns,1); }
 //
 uint64_t nk_timer_handler (void)
 {
-    if (my_cpu_id()!=0) { 
-	return -1;  // infinitely far in the future
-    }
+  if (my_cpu_id()!=0) { 
+    return -1;  // infinitely far in the future
+  }
 
-    STATE_LOCK_CONF;
-    struct nk_timer *cur, *temp;
-    uint64_t now = nk_sched_get_realtime();
-    uint64_t earliest = -1;
+  STATE_LOCK_CONF;
+  struct nk_timer *cur, *temp;
+  uint64_t now = nk_sched_get_realtime();
+  uint64_t earliest = -1;
 
-    DEBUG("Timer update\n");
+  DEBUG("Timer update\n");
 
-    STATE_LOCK();
+  STATE_LOCK();
 
-    list_for_each_entry_safe(cur, temp, &timer_list, node) {
-	if (now >= cur->time_ns) { 
+  list_for_each_entry_safe(cur, temp, &timer_list, node) {
+    if (now >= cur->time_ns) { 
 	    DEBUG("Found expired timer %p\n",cur);
 	    cur->signaled = 1;
 	    list_del(&cur->node);
 	    if (!(cur->flags & TIMER_SPIN)) { 
-		// wake waiters
-		DEBUG("Waking threads\n");
-		nk_thread_queue_wake_all(cur->waitq);
+        // wake waiters
+        DEBUG("Waking threads\n");
+        nk_thread_queue_wake_all(cur->waitq);
 	    }
 	    if (cur->flags & TIMER_CALLBACK) { 
-		// launch callback, but do not wait for it
-		DEBUG("Launching callback\n");
-		smp_xcall(cur->cpu,
-			  cur->callback,
-			  cur->priv,
-			  0);
+        // launch callback, but do not wait for it
+        DEBUG("Launching callback\n");
+        smp_xcall(cur->cpu,
+                  cur->callback,
+                  cur->priv,
+                  0);
 	    }
-	} else {
+    } else {
 	    if (cur->time_ns < earliest) { 
-		// search for earliest active timer
-		earliest = cur->time_ns;
+        // search for earliest active timer
+        earliest = cur->time_ns;
 	    }
-	}
     }
+  }
     
-    STATE_UNLOCK();
+  STATE_UNLOCK();
     
-    DEBUG("Timer update: earliest is %llu\n",earliest);
+  DEBUG("Timer update: earliest is %llu\n",earliest);
 
-    return earliest;
+  return earliest;
 }
 
 
 int nk_timer_init()
 {
-    spinlock_init(&state_lock);
-    INIT_LIST_HEAD(&timer_list);
+  spinlock_init(&state_lock);
+  INIT_LIST_HEAD(&timer_list);
 
-    INFO("Timers inited\n");
-    return 0;
+  INFO("Timers inited\n");
+  return 0;
 }
 
 void nk_timer_deinit()
 {
-    INFO("Timers deinited\n");
-    return;
+  INFO("Timers deinited\n");
+  return;
 }

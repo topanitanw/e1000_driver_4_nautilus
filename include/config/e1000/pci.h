@@ -1,0 +1,1 @@
+#define NAUT_CONFIG_E1000_PCI 1

@@ -114,7 +114,21 @@ config DEBUG_E1000_PCI
     default n
     help
       Turn on debug prints for the E1000 
-      
+
+config E1000E_PCI
+    bool "Core E1000E PCI Driver"
+    depends on X86_64_HOST
+    default n
+    help
+      Adds the basic E1000E PCI interface
+
+config DEBUG_E1000E_PCI
+    bool "Debug E1000E PCI"
+    depends on DEBUG_PRINTS && E1000E_PCI
+    default n
+    help
+      Turn on debug prints for the E1000E
+
 config RAMDISK
     bool "RAM Disk Support"
     default n

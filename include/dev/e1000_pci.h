@@ -32,6 +32,8 @@
 // These variables are configurable, and they will change the number of descriptors
 // and the packet buffer pointed by the descriptors.
 // The number of descriptors is always a multiple of eight.
+
+#define NIC_NAME              "e1000e-0"
 #define TX_DSC_COUNT          16
 #define TX_BLOCKSIZE          256 // bytes available per DMA block
 #define RX_DSC_COUNT          16  // equal to DMA block count
@@ -43,8 +45,8 @@
 // 16384 bytes is from the maximum packet buffer size that e1000 can receive.
 // 16288 bytes is the maximum packet size that e1000 can send in theory.
 // Ethernet standard MTU is 1500 bytes.
-#define MAX_TU                16384 /* maximum transmission unit */
-#define MIN_TU                48    /* minimum transmission unit */
+#define MAX_TU                16384    /* maximum transmission unit */
+#define MIN_TU                48       /* minimum transmission unit */
 
 // PCI CONFIG SPACE ************************************
 #define INTEL_VENDOR_ID       0x8086
@@ -61,7 +63,7 @@
 #define TCTL_OFFSET           0x0400   // transmit control
 #define TIPG_OFFSET           0x0410   // transmit interpacket gap
 #define E1000_TXDCTL_OFFSET   0x03828  // transmit descriptor control r/w
-
+ 
 #define E1000_RAL_OFFSET      0x5400   // receive address (64b)
 #define E1000_RAH_OFFSET      0x5404   //  
 
@@ -76,6 +78,8 @@
 
 #define E1000_TPT_OFFSET      0x40D4   // total package transmit
 #define E1000_TPR_OFFSET      0x40D0   // total package receive
+#define E1000_COLC_OFFSET     0x04028  // collision count
+#define E1000_RXERRC_OFFSET   0x0400C  // rx error count
 
 // 4 interrupt register offset
 #define E1000_ICR_OFFSET      0x000C0  /* interrupt cause read register */
@@ -249,6 +253,7 @@ struct e1000_state {
 };
 
 // function declaration
+void nk_ifconfig();
 int e1000_post_send(void*, uint8_t*, uint64_t,
                     void (*)(nk_net_dev_status_t, void*), void*);
 int e1000_post_receive(void*, uint8_t*, uint64_t,

@@ -32,7 +32,12 @@
 #define IPV4_LEN                  4              /* length of ipv4 in bytes */
 #define MAC_LEN                   6              /* length of mac address in bytes */
 #define IP_ADDRESS_STRING         "10.10.10.3"
-#define PORT_NUM                  5000
+#define PORT_NUM_RX               5000
+#define PORT_NUM_TX               6002  
+#define MAC_STRING_LEN            25             /* size of a string format of a mac address */
+/* a string format of a mac address xx:xx:xx_xx:xx:xx\0 */
+#define IP_STRING_LEN             17             /* size of a string format of an ip address */
+/* a string format of an ip address xxx.xxx.xxx.xxx\0 */
 
 // ethernet frame
 #define ETHERNET_TYPE_ARP         0x0806         /* ethernet type arp */
@@ -138,6 +143,9 @@ struct arp_header {
 struct arp_info {
   struct nk_net_dev *netdev;
   uint32_t ip_addr;
+  char* nic_name;
+  uint32_t packet_num;
+  uint8_t vc;
 };
 
 // icmp header
@@ -151,7 +159,10 @@ struct icmp_header {
 } __packed;
 
 // function definition
-void dump_packet(uint8_t *p, int len);
+void mac_inttostr(uint8_t *mac, char* buf, int len);
+void nk_hostnamei();
+void nk_echoserver(char*, uint32_t);
+void dump_packet(uint8_t *, int);
 int arp_init(struct naut_info *);
 int arp_deinit();
 

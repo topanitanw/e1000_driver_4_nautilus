@@ -35,6 +35,7 @@
 #include <nautilus/arp.h>             // dump_packet
 #include <nautilus/naut_string.h>     // memset, memcpy
 #include <nautilus/dev.h>             // NK_DEV_REQ_*
+#include <nautilus/netdev.h>          // nk_dev_find
 
 #ifndef NAUT_CONFIG_DEBUG_E1000_PCI
 #undef DEBUG_PRINT
@@ -414,11 +415,12 @@ int e1000_post_send(void *state,
                     void *context) {
   // always map callback
   int result = 0;
-  DEBUG("Post send fn callback 0x%p\n", callback);
+  DEBUG("post send fn callback 0x%p\n", callback);
   result = e1000_map_callback(((struct e1000_state*)state)->tx_map, callback, context);
 
-  if (!result)
+  if (!result) {
     result = e1000_send_packet(src, len, (struct e1000_state*) state);
+  }
   DEBUG("post send fn end\n");
   return result;
 }
@@ -434,8 +436,9 @@ int e1000_post_receive(void *state,
   DEBUG("post receive fn callback 0x%p\n", callback);
   result  = e1000_map_callback(((struct e1000_state*)state)->rx_map, callback, context);
 
-  if(!result) 
+  if(!result) {
     result = e1000_receive_packet(src, len, (struct e1000_state*) state);
+  }
   DEBUG("post receive fn end\n");
   return result;
 }
@@ -502,7 +505,7 @@ int e1000_pci_init(struct naut_info * naut) {
   dev_state = state;
   struct pci_info *pci = naut->sys.pci;
   struct list_head *curbus, *curdev;
-  int num = 0;
+  uint32_t num = 0;
 
   INFO("init\n");
   // building the e1000 linked list and register it
@@ -526,7 +529,7 @@ int e1000_pci_init(struct naut_info * naut) {
       struct pci_dev *pdev = list_entry(curdev,struct pci_dev,dev_node);
       struct pci_cfg_space *cfg = &pdev->cfg;
 
-      DEBUG("Device %u is a %x:%x\n", pdev->num, cfg->vendor_id, cfg->device_id);
+      DEBUG("Device %u is a 0x%x:0x%x\n", pdev->num, cfg->vendor_id, cfg->device_id);
       // intel vendor id and e1000 device id
       if (cfg->vendor_id==INTEL_VENDOR_ID && cfg->device_id==E1000_DEVICE_ID) {
         DEBUG("E1000 Device Found\n");
@@ -608,17 +611,17 @@ int e1000_pci_init(struct naut_info * naut) {
              dev->mem_start, dev->mem_end);
 
         uint16_t old_cmd = pci_cfg_readw(bus->num,pdev->num,0,0x4);
-        DEBUG("Old PCI CMD: %x\n",old_cmd);
+        DEBUG("Old PCI CMD: 0x%04x\n",old_cmd);
 
         old_cmd |= 0x7;  // make sure bus master is enabled
         old_cmd &= ~0x40;
 
-        DEBUG("New PCI CMD: %x\n",old_cmd);
+        DEBUG("New PCI CMD: 0x%04x\n",old_cmd);
 
         pci_cfg_writew(bus->num,pdev->num,0,0x4,old_cmd);
 
         uint16_t stat = pci_cfg_readw(bus->num,pdev->num,0,0x6);
-        DEBUG("PCI STATUS: %x\n",stat);
+        DEBUG("PCI STATUS: 0x%04x\n",stat);
 
         // read the status register at void ptr + offset
         uint32_t status = READ_MEM(state->dev, E1000_STATUS_OFFSET);

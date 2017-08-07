@@ -59,6 +59,10 @@
 #include <gc/pdsgc/pdsgc.h>
 #endif
 
+#ifdef NAUT_CONFIG_ENABLE_REMOTE_DEBUGGING
+#include <nautilus/gdb-stub.h>
+#endif
+
 #define MAX_CMD 80
 
 struct burner_args {
@@ -782,6 +786,9 @@ static int handle_cmd(char *buf, int n)
 #ifdef NAUT_CONFIG_GARBAGE_COLLECTION
     nk_vc_printf("collect | leaks\n");
 #endif
+#ifdef NAUT_CONFIG_ENABLE_REMOTE_DEBUGGING
+    nk_vc_printf("break\n");
+#endif
     nk_vc_printf("burn a name size_ms tpr priority\n");
     nk_vc_printf("burn s name size_ms tpr phase size deadline priority\n");
     nk_vc_printf("burn p name size_ms tpr phase period slice\n");
@@ -861,6 +868,13 @@ static int handle_cmd(char *buf, int n)
 #ifdef NAUT_CONFIG_GARBAGE_COLLECTION
   if (!strncasecmp(buf,"collect",7)) { 
       handle_collect(buf); 
+      return 0;
+  }
+#endif
+
+#ifdef NAUT_CONFIG_ENABLE_REMOTE_DEBUGGING
+  if (!strncasecmp(buf,"break",5)) {
+      nk_gdb_breakpoint_here();
       return 0;
   }
 #endif

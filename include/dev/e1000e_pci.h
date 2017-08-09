@@ -66,6 +66,7 @@
 // flow control address
 #define E1000E_FCAL_OFFSET    0x00028
 #define E1000E_FCAH_OFFSET    0x0002C
+#define E1000E_FCT_OFFSET     0x00030
 // transmit
 #define E1000E_TDBAL_OFFSET   0x3800   // transmit descriptor base address low check
 #define E1000E_TDBAH_OFFSET   0x3804   // transmit descriptor base address high check
@@ -110,10 +111,16 @@
 #define E1000E_CTRL_SLU              (1<<6)      // set link up
 #define E1000E_CTRL_SPEED_10M        (0<<8)      // speed selection
 #define E1000E_CTRL_SPEED_100M       (1<<8)
-#define E1000E_CTRL_SPEED_1G         (2<<8)   
+#define E1000E_CTRL_SPEED_1G         (2<<8)
+#define E1000E_CTRL_FRCDPLX          (1<<12)     // force duplex
 #define E1000E_CTRL_RST              (1<<26)     // reset
 #define E1000E_CTRL_RFCE             (1<<27)     // receive flow control enable
 #define E1000E_CTRL_TFCE             (1<<28)     // transmit control flow enable
+// Status
+#define E1000E_STATUS_SPEED_10M      (0<<8)
+#define E1000E_STATUS_SPEED_100M     (1<<8)
+#define E1000E_STATUS_SPEED_1G       (2<<8)
+#define E1000E_STATUS_SPEED_MASK     (3<<8)
 // E1000E Transmit Control Register
 #define E1000E_TCTL_EN               (1 << 1)      // transmit enable
 #define E1000E_TCTL_PSP              (1 << 3)      // pad short packet

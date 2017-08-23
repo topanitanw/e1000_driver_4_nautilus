@@ -36,6 +36,7 @@
 #define TX_BLOCKSIZE          256      // bytes available per DMA block
 #define RX_DSC_COUNT          16       // equal to DMA block count
 #define RX_BLOCKSIZE          256      // bytes available per DMA block
+#define RESTART_DELAY         10000    // usec = 10 ms
 
 // After this line, PLEASE DO NOT CHANGE ANYTHING.
 // transmission unit
@@ -45,18 +46,21 @@
 // Ethernet standard MTU is 1500 bytes.
 #define MAX_TU                    16384    // maximum transmission unit 
 #define MIN_TU                    48       // minimum transmission unit 
+#define MAC_LEN                   6        // the length of the mac address
 
 // PCI CONFIG SPACE ************************************
 #define INTEL_VENDOR_ID               0x8086
 #define E1000E_DEVICE_ID              0x10D3
 #define E1000E_PCI_CMD_OFFSET         0x4    // Device Control - RW
-#define E1000E_PCI_STATUS_OFFSET      0x6    // Device Status - RO 
+#define E1000E_PCI_STATUS_OFFSET      0x6    // Device Status - RO
+
 // PCI command register
 #define E1000E_PCI_CMD_IO_ACCESS_EN   1       // io access enable
 #define E1000E_PCI_CMD_MEM_ACCESS_EN  (1<<1)  // memory access enable
 #define E1000E_PCI_CMD_LANRW_EN       (1<<2)  // enable mastering lan r/w
-#define E1000E_PCI_CMD_INT_DISABLE    (1<<10) // interrupt disable
+#define E1000E_PCI_CMD_INT_DISABLE    (1<<10) // legacy interrupt disable when set
 
+// PCI status register
 #define E1000E_PCI_STATUS_INT         (1<<3)
 
 // REGISTER OFFSETS ************************************
@@ -96,7 +100,6 @@
 #define E1000E_COLC_OFFSET    0x04028  // collision count
 #define E1000E_RXERRC_OFFSET  0x0400C  // rx error count
 
-
 // 4 interrupt register offset
 #define E1000E_ICR_OFFSET     0x000C0  /* interrupt cause read register check*/
 #define E1000E_ICS_OFFSET     0x000C8  /* interrupt cause set register */
@@ -109,23 +112,27 @@
 // Ctrl
 #define E1000E_CTRL_FD               1           // full deplex
 #define E1000E_CTRL_SLU              (1<<6)      // set link up
+#define E1000E_CTRL_ILOS             (1<<7)      // loss of signal polarity
 #define E1000E_CTRL_SPEED_10M        (0<<8)      // speed selection
 #define E1000E_CTRL_SPEED_100M       (1<<8)
 #define E1000E_CTRL_SPEED_1G         (2<<8)
+#define E1000E_CTRL_FRCSPD           (1<<11)     // force speed
 #define E1000E_CTRL_FRCDPLX          (1<<12)     // force duplex
 #define E1000E_CTRL_RST              (1<<26)     // reset
 #define E1000E_CTRL_RFCE             (1<<27)     // receive flow control enable
 #define E1000E_CTRL_TFCE             (1<<28)     // transmit control flow enable
 // Status
+#define E1000E_STATUS_FD             1           // full, half duplex = 1, 0
+#define E1000E_STATUS_LU             (1<<1)      // link up established = 1
 #define E1000E_STATUS_SPEED_10M      (0<<8)
 #define E1000E_STATUS_SPEED_100M     (1<<8)
 #define E1000E_STATUS_SPEED_1G       (2<<8)
 #define E1000E_STATUS_SPEED_MASK     (3<<8)
 // E1000E Transmit Control Register
-#define E1000E_TCTL_EN               (1 << 1)      // transmit enable
-#define E1000E_TCTL_PSP              (1 << 3)      // pad short packet
-#define E1000E_TCTL_CT               (0x0f << 4)   // collision threshold
-#define E1000E_TCTL_COLD_FD          (0x40 << 12)  // collision distance full duplex
+#define E1000E_TCTL_EN               (1 << 1)    // transmit enable
+#define E1000E_TCTL_PSP              (1 << 3)    // pad short packet
+#define E1000E_TCTL_CT               (0x0f << 4) // collision threshold
+#define E1000E_TCTL_COLD_FD          (0x40 << 12)// collision distance full duplex
 #define E1000E_TCTL_COLD_HD          (0x200 << 12) // collision distance half duplex
 // IPG = inter packet gap
 #define E1000E_TIPG_IPGT             0x0a          // IPG transmit time
@@ -276,6 +283,10 @@ struct e1000e_map_ring {
 struct e1000e_state {
   char name[DEV_NAME_LEN];
   uint8_t mac_addr[6];
+  // the bus number of the devince on the pci bus
+  uint32_t bus_num;       
+  // the device number of the device on the pci bus
+  uint32_t dev_num;
   struct e1000e_dev *dev;
   struct e1000e_desc_ring *tx_ring;
   struct e1000e_desc_ring *rxd_ring;

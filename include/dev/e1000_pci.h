@@ -33,7 +33,7 @@
 // and the packet buffer pointed by the descriptors.
 // The number of descriptors is always a multiple of eight.
 
-#define NIC_NAME              "e1000e-0"
+// #define NIC_NAME              "e1000e-0"
 #define TX_DSC_COUNT          16
 #define TX_BLOCKSIZE          256 // bytes available per DMA block
 #define RX_DSC_COUNT          16  // equal to DMA block count

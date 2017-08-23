@@ -31,7 +31,7 @@
 // general definition
 #define IPV4_LEN                  4              /* length of ipv4 in bytes */
 #define MAC_LEN                   6              /* length of mac address in bytes */
-#define IP_ADDRESS_STRING         "10.10.10.3"
+#define IP_ADDRESS_STRING         "165.124.183.190"
 #define PORT_NUM_RX               5000
 #define PORT_NUM_TX               6002  
 #define MAC_STRING_LEN            25             /* size of a string format of a mac address */

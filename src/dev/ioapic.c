@@ -318,7 +318,7 @@ __ioapic_init (struct ioapic * ioapic, uint8_t ioapic_id)
     nk_unmask_irq(serial_get_irq());
     nk_unmask_irq(1); // keyboard
 #endif
-
+    
     ioapic_dump(ioapic);
 
     return 0;

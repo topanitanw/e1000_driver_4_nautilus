@@ -33,7 +33,7 @@
 #include <nautilus/printk.h>
 #include <nautilus/mm.h>                      // malloc
 #include <dev/pci.h>
-#include <dev/e1000_pci.h>
+#include <dev/e1000e_pci.h>
 #include <nautilus/arp.h>
 #include <nautilus/vc.h>                      // nk_vc_printf
 
@@ -498,7 +498,7 @@ int send_udp_packet(uint8_t* input_packet, uint8_t* output_packet,
 
 void arp_thread(void *in, void **out) {
   DEBUG("arp_thread function ------------------------------|\n");
-  struct arp_info* ai = (struct arp_info *)in;
+  struct arp_info* ai = (struct arp_info *) in;
   DEBUG("ai = 0x%p\n", ai);
   struct nk_net_dev_characteristics c;
   DEBUG("calling nk_net_dev_get_characteristics &c: 0x%p|\n", &c);
@@ -571,6 +571,9 @@ void arp_thread(void *in, void **out) {
       }
     }
   }
+  free(input_packet);
+  free(output_packet);
+  return;
 }
 
 int arp_init(struct naut_info * naut) {
@@ -581,7 +584,7 @@ int arp_init(struct naut_info * naut) {
     return -1;
   }
   // search for the device in netdev
-  ai->netdev = nk_net_dev_find(NIC_NAME);
+  ai->netdev = nk_net_dev_find("e1000-0");
   if (!ai->netdev) {
     ERROR("Cannot find the \"e1000-0\" ethernet adapter from nk_net_dev\n");
     return -1;
@@ -610,15 +613,13 @@ int arp_deinit() {
   return 0;
 }
 
-/* Show the ip address of the machine
- *
- */
+// Show the ip address of the machine
 void nk_hostnamei() {
   char* net_dev_name = NULL;
-#ifdef NAUT_CONFIG_E1000_PCI
+// #ifdef NAUT_CONFIG_E1000_PCI
   // net_dev_name = "e1000-0";
   nk_vc_printf("%s\n", IP_ADDRESS_STRING);
-#endif
+// #endif
 }
 
 void nk_echoserver(char* nic_name, uint32_t packet_num) {

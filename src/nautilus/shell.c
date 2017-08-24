@@ -34,6 +34,7 @@
 #include <nautilus/cpuid.h>
 #include <nautilus/msr.h>
 #include <nautilus/backtrace.h>
+#include <dev/pci.h>
 #include <test/ipi.h>
 #include <test/threads.h>
 #include <test/groups.h>
@@ -58,6 +59,22 @@
 #ifdef NAUT_CONFIG_ENABLE_PDSGC
 #include <gc/pdsgc/pdsgc.h>
 #endif
+
+#ifdef NAUT_CONFIG_ENABLE_REMOTE_DEBUGGING
+#include <nautilus/gdb-stub.h>
+#endif
+
+#ifdef NAUT_CONFIG_PROFILE
+#include <nautilus/instrument.h>
+#endif
+
+#ifdef NAUT_CONFIG_LOAD_LUA
+#include <lua/lua.h>
+#include <lua/lualib.h>
+#include <lua/lauxlib.h>
+#include <dev/lua_script.h>
+#endif
+
 
 #define MAX_CMD 80
 
@@ -739,6 +756,45 @@ int handle_run(char *buf)
 
     return 0;
 }    
+
+int handle_pci(char *buf)
+{
+  int bus, slot, func, off;
+
+  if (strncmp(buf,"pci l",5)==0) { 
+    pci_dump_device_list();
+    return 0;
+  }
+
+  if (sscanf(buf,"pci raw %x %x %x\n", &bus, &slot, &func)==3) { 
+    int i,j;
+    uint32_t v;
+    for (i=0;i<256;i+=32) {
+      nk_vc_printf("%02x:", i);
+      for (j=0;j<8;j++) {
+	v = pci_cfg_readl(bus,slot,func,i+j*4);
+	nk_vc_printf(" %08x",v);
+      } 
+      nk_vc_printf("\n");
+    }
+    return 0;
+  }
+
+  if (sscanf(buf,"pci dev %x %x %x\n", &bus, &slot, &func)==3) { 
+    pci_dump_device(pci_find_device(bus,slot,func));
+    return 0;
+  }
+
+  if (!strncmp(buf,"pci dev",7)) {
+    pci_dump_devices();
+    return 0;
+  }
+
+  nk_vc_printf("unknown pci command\n");
+
+  return -1;
+}    
+	
 	
 
 static int handle_cmd(char *buf, int n)
@@ -775,12 +831,20 @@ static int handle_cmd(char *buf, int n)
   if (!strncasecmp(buf,"help",4)) { 
     nk_vc_printf("help\nexit\nvcs\ncores [n]\ntime [n]\nthreads [n]\n");
     nk_vc_printf("devs | fses | ofs | cat [path]\n");
+#ifdef NAUT_CONFIG_PROFILE
+    nk_vc_printf("profile\n");
+#endif
+
+    nk_vc_printf("pci list | pci raw/dev bus slot func | pci dev\n");
     nk_vc_printf("shell name\n");
     nk_vc_printf("regs [t]\npeek [bwdq] x | mem x n [s] | poke [bwdq] x y\nin [bwd] addr | out [bwd] addr data\nrdmsr x [n] | wrmsr x y\ncpuid f [n] | cpuidsub f s\n");
     nk_vc_printf("meminfo [detail]\n");
     nk_vc_printf("reap\n");
 #ifdef NAUT_CONFIG_GARBAGE_COLLECTION
     nk_vc_printf("collect | leaks\n");
+#endif
+#ifdef NAUT_CONFIG_ENABLE_REMOTE_DEBUGGING
+    nk_vc_printf("break\n");
 #endif
     nk_vc_printf("burn a name size_ms tpr priority\n");
     nk_vc_printf("burn s name size_ms tpr phase size deadline priority\n");
@@ -797,6 +861,13 @@ static int handle_cmd(char *buf, int n)
     return 0;
   }
 
+#ifdef NAUT_CONFIG_PROFILE
+  if (!strncasecmp(buf,"profile",7)) {
+    nk_instrument_query();
+    return 0;
+  }
+#endif
+
   if (!strncasecmp(buf,"vcs",3)) {
     nk_switch_to_vc_list();
     return 0;
@@ -804,6 +875,11 @@ static int handle_cmd(char *buf, int n)
 
   if (!strncasecmp(buf,"devs",4)) {
     nk_dev_dump_devices();
+    return 0;
+  }
+
+  if (!strncasecmp(buf,"pci",3)) {
+    handle_pci(buf);
     return 0;
   }
 
@@ -861,6 +937,13 @@ static int handle_cmd(char *buf, int n)
 #ifdef NAUT_CONFIG_GARBAGE_COLLECTION
   if (!strncasecmp(buf,"collect",7)) { 
       handle_collect(buf); 
+      return 0;
+  }
+#endif
+
+#ifdef NAUT_CONFIG_ENABLE_REMOTE_DEBUGGING
+  if (!strncasecmp(buf,"break",5)) {
+      nk_gdb_breakpoint_here();
       return 0;
   }
 #endif

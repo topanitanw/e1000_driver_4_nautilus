@@ -74,6 +74,10 @@
 #ifdef NAUT_CONFIG_E1000_PCI
 #include <dev/e1000_pci.h>
 #endif
+#ifdef NAUT_CONFIG_E1000E_PCI
+#include <dev/e1000e_pci.h>
+#include <test/net_udp_echo.h>
+#endif
 #ifdef NAUT_CONFIG_RAMDISK
 #include <dev/ramdisk.h>
 #endif
@@ -432,6 +436,10 @@ init (unsigned long mbd,
     e1000_pci_init(naut);
 #endif
 
+#ifdef NAUT_CONFIG_E1000E_PCI
+    e1000e_pci_init(naut);
+#endif
+    
     nk_fs_init();
 
 #ifdef NAUT_CONFIG_EXT2_FILESYSTEM_DRIVER
@@ -453,7 +461,9 @@ init (unsigned long mbd,
     nk_launch_shell("root-shell",0);
 
     runtime_init();
-
+    
+    e1000e_trigger_int();
+    test_net_udp_echo("e1000e-0", "165.124.183.167","5000", 11); 
     printk("Nautilus boot thread yielding (indefinitely)\n");
 
     /* we don't come back from this */

@@ -690,7 +690,7 @@ int ps2_kbd_reset()
 int ps2_reset()
 {
   ps2_kbd_reset();
-  ps2_mouse_reset();
+  // ps2_mouse_reset();
   return 0;
 }
 
@@ -708,12 +708,12 @@ int ps2_init(struct naut_info * naut)
 {
   INFO("init\n");
   register_irq_handler(1, kbd_handler, NULL);
-  register_irq_handler(12, mouse_handler, NULL);
+  // register_irq_handler(12, mouse_handler, NULL);
   ps2_reset();
   nk_dev_register("ps2-keyboard",NK_DEV_GENERIC,0,&kops,0);
-  nk_dev_register("ps2-mouse",NK_DEV_GENERIC,0,&mops,0);
+  // nk_dev_register("ps2-mouse",NK_DEV_GENERIC,0,&mops,0);
   nk_unmask_irq(1);
-  nk_unmask_irq(12);
+  // nk_unmask_irq(12);
   return 0;
 }
 

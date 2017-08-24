@@ -59,13 +59,6 @@
 #include <gc/pdsgc/pdsgc.h>
 #endif
 
-#ifdef NAUT_CONFIG_LOAD_LUA
-#include <lua/lua.h>
-#include <lua/lualib.h>
-#include <lua/lauxlib.h>
-#include <dev/lua_script.h>
-#endif
-
 #define MAX_CMD 80
 
 struct burner_args {

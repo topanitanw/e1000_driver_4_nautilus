@@ -4,3 +4,9 @@ tags
 .config*
 *.bin
 *.iso
+.kconfig.d
+include/autoconf.h
+scripts/basic/*
+scripts/kconfig/*
+include/config/*
+git-patch/

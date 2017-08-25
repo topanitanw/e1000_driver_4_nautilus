@@ -2,5 +2,11 @@
 *.cmd
 tags
 .config*
+.kconfig.d*
 *.bin
 *.iso
+include/autoconf.h
+include/config/*
+scripts/basic/*
+scripts/kconfig/*
+git-patch/

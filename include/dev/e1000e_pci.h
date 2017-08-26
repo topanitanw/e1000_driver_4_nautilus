@@ -281,6 +281,9 @@ struct e1000e_map_ring {
 };
   
 struct e1000e_state {
+  // FIX compared with the e1000_pci.c
+  // delete dev
+  // add all the fields in dev to this structure
   char name[DEV_NAME_LEN];
   uint8_t mac_addr[6];
   // the bus number of the devince on the pci bus
@@ -303,7 +306,11 @@ int e1000e_post_send(void*, uint8_t*, uint64_t,
 int e1000e_post_receive(void*, uint8_t*, uint64_t,
                        void (*)(nk_net_dev_status_t, void*), void*);
 
+void e1000e_disable_all_int();
 void e1000e_trigger_int();
+void e1000e_trigger_int_num(uint32_t int_num);
+void e1000e_legacy_int_off();
+void e1000e_legacy_int_on();
 
 int e1000e_pci_init(struct naut_info * naut);
 int e1000e_pci_deinit();

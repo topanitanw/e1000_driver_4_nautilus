@@ -463,7 +463,7 @@ init (unsigned long mbd,
     runtime_init();
     
     e1000e_trigger_int();
-    test_net_udp_echo("e1000e-0", "165.124.183.167","5000", 11); 
+    // test_net_udp_echo("e1000e-0", "165.124.183.167", 5000, 11); 
     printk("Nautilus boot thread yielding (indefinitely)\n");
 
     /* we don't come back from this */

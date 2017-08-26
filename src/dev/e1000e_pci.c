@@ -471,17 +471,17 @@ int e1000e_post_receive(void *vstate,
   return result;
 }
 
-static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec) {
+static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   panic("within irq handler\n");
   DEBUG("irq_handler fn: vector: 0x%x rip: 0x%p\n", vec, excp->rip);
-  uint32_t icr = READ_MEM(dev_state->dev, E1000E_ICR_OFFSET);
-  uint32_t ims = READ_MEM(dev_state->dev, E1000E_IMS_OFFSET);
+  struct e1000e_state* state = s;  
+  uint32_t icr = READ_MEM(state->dev, E1000E_ICR_OFFSET);
+  uint32_t ims = READ_MEM(state->dev, E1000E_IMS_OFFSET);
   uint32_t mask_int = icr & ims;
   DEBUG("irq_handler fn: ICR: 0x%08x IMS: 0x%08x mask_int: 0x%08x\n",
         icr, ims, mask_int);
   DEBUG("irq_handler fn: ICR: 0x%08x icr expects  zero.\n",
-        READ_MEM(dev_state->dev, E1000E_ICR_OFFSET));
-  struct e1000e_state* state = dev_state;
+        READ_MEM(state->dev, E1000E_ICR_OFFSET));
 
   void (*callback)(nk_net_dev_status_t, void*) = NULL;
   void *context = NULL;
@@ -490,7 +490,7 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec) {
   if(mask_int & E1000E_ICR_TXDW) {
     // transmit interrupt
     DEBUG("irq_handler fn: handle the txdw interrupt\n");
-    e1000e_unmap_callback(dev_state->tx_map, (uint64_t **)&callback, (void **)&context);
+    e1000e_unmap_callback(state->tx_map, (uint64_t **)&callback, (void **)&context);
     // if there is an error while sending a packet, set the error status
     if(TXD_STATUS(TXD_PREV_HEAD).ec || TXD_STATUS(TXD_PREV_HEAD).lc) {
       ERROR("irq_handler fn: transmit errors\n");
@@ -506,7 +506,7 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec) {
   if(mask_int & E1000E_ICR_RXT0) {
     // receive interrupt
     DEBUG("irq_handler fn: handle the rxt0 interrupt\n");
-    e1000e_unmap_callback(dev_state->rx_map, (uint64_t **)&callback, (void **)&context);
+    e1000e_unmap_callback(state->rx_map, (uint64_t **)&callback, (void **)&context);
     // checking errors
     if(RXD_ERRORS(RXD_PREV_HEAD)) {
       ERROR("irq_handler fn: receive an error packet\n");
@@ -530,20 +530,75 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec) {
   return 0;
 }
 
+void e1000e_disable_all_int() {
+  WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
+  return;
+}
+
 void e1000e_trigger_int() {
+  // imc is a written only register.
+  WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
   // enable only transmit descriptor written back and receive interrupt timer  
   WRITE_MEM(dev_state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
+
+  if ((E1000E_ICR_TXDW | E1000E_ICR_RXT0) != READ_MEM(dev_state->dev, E1000E_IMS_OFFSET)) {
+    ERROR("IMS reg: the written and read values do not match\n");
+    return;
+  }
   // after the interrupt is turned on, the interrupt handler is called
   // due to the transmit descriptor queue empty.
-
+  // set an interrupt on ICS register
+  // ICS is w reg which means its value cannot be read back.
   WRITE_MEM(dev_state->dev, E1000E_ICS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
-  DEBUG("init fn: ICS 0x08x expect 0x08x",
-        READ_MEM(dev_state->dev, E1000E_ICS_OFFSET),
-        E1000E_ICR_TXDW | E1000E_ICR_RXT0);
   uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
                                       0, E1000E_PCI_STATUS_OFFSET);
-  DEBUG("init fn: status_pci 0x%04x int %d\n",
+  DEBUG("trigger int fn: status_pci 0x%04x int %d\n",
         status_pci, status_pci & E1000E_PCI_STATUS_INT);  
+  return;
+}
+
+void e1000e_trigger_int_num(uint32_t int_num) {
+  // imc is a written only register.
+  WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
+  // enable only transmit descriptor written back and receive interrupt timer  
+  WRITE_MEM(dev_state->dev, E1000E_IMS_OFFSET, int_num);
+  if (int_num != READ_MEM(dev_state->dev, E1000E_IMS_OFFSET)) {
+    ERROR("IMS reg: the written and read values do not match\n");
+    return;
+  }  
+  // after the interrupt is turned on, the interrupt handler is called
+  // due to the transmit descriptor queue empty.
+  // set an interrupt on ICS register
+  WRITE_MEM(dev_state->dev, E1000E_ICS_OFFSET, int_num);
+
+  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                                      0, E1000E_PCI_STATUS_OFFSET);
+  DEBUG("trigger int fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);  
+  return;
+}
+
+void e1000e_legacy_int_off() {
+  uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN | E1000E_PCI_CMD_INT_DISABLE;
+  DEBUG("legacy int off: pci cmd: 0x%04x\n", pci_cmd);
+  pci_cfg_writew(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET, pci_cmd);
+  DEBUG("legacy int off: pci_cmd 0x%04x expects  0x%04x\n",
+        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET),
+        pci_cmd);
+  DEBUG("legacy int off: pci status 0x%04x\n",
+        pci_cfg_readw(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_STATUS_OFFSET));
+  return;
+}
+
+void e1000e_legacy_int_on() {
+  uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN;
+  DEBUG("legacy int on: pci cmd: 0x%04x\n", pci_cmd);
+  pci_cfg_writew(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET, pci_cmd);
+  DEBUG("legacy int on: pci_cmd 0x%04x expects  0x%04x\n",
+        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET),
+        pci_cmd);
+  DEBUG("legacy int on: pci status 0x%04x\n",
+        pci_cfg_readw(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_STATUS_OFFSET));
   return;
 }
 
@@ -660,19 +715,19 @@ int e1000e_pci_init(struct naut_info * naut) {
              dev->ioport_start, dev->ioport_end,
              dev->mem_start, dev->mem_end);
         // CLEANUP
-        uint16_t old_cmd = pci_cfg_readw(bus->num,pdev->num,0,E1000E_PCI_CMD_OFFSET);
-        DEBUG("Old PCI CMD: 0x%04x\n",old_cmd);
+        /* uint16_t old_cmd = pci_cfg_readw(bus->num,pdev->num,0,E1000E_PCI_CMD_OFFSET); */
+        /* DEBUG("Old PCI CMD: 0x%04x\n",old_cmd); */
 
-        old_cmd |= 0x7;  // make sure bus master is enabled
-        old_cmd &= ~0x40;
-        uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN;
+        /* old_cmd |= 0x7;  // make sure bus master is enabled */
+        /* old_cmd &= ~0x40; */
+        uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN | E1000E_PCI_CMD_INT_DISABLE;
         DEBUG("New PCI CMD: 0x%04x\n", pci_cmd);
-        pci_cfg_writew(bus->num,pdev->num,0,E1000E_PCI_CMD_OFFSET,old_cmd | pci_cmd);
+        pci_cfg_writew(bus->num,pdev->num,0,E1000E_PCI_CMD_OFFSET, pci_cmd);
         DEBUG("init fn: pci_cmd 0x%04x expects  0x%04x\n",
-              pci_cfg_readw(bus->num,pdev->num, 0,E1000E_PCI_CMD_OFFSET),
+              pci_cfg_readw(bus->num,pdev->num, 0, E1000E_PCI_CMD_OFFSET),
               pci_cmd);
         DEBUG("init fn: pci status 0x%04x\n",
-              pci_cfg_readw(bus->num,pdev->num, 0,E1000E_PCI_STATUS_OFFSET));
+              pci_cfg_readw(bus->num,pdev->num, 0, E1000E_PCI_STATUS_OFFSET));
         list_add(&dev_list, &dev->e1000e_node);
         sprintf(state->name, "e1000e-%d", num);
         num++;
@@ -742,33 +797,34 @@ int e1000e_pci_init(struct naut_info * naut) {
   WRITE_MEM(state->dev, E1000E_IMC_OFFSET, 0);
   DEBUG("init fn: IMC = 0x%08x expects 0x%08x\n",
         READ_MEM(state->dev, E1000E_IMC_OFFSET), 0);
-  /* struct pci_dev* pdev = pci_find_device(state->bus_num, state->dev_num, 0); */
-  /* if(pdev != NULL) { */
-  /*   if (pci_dev_enable_msi(pdev, 153, 1, 0)) { */
-  /*       // failed to enable... */
-  /*       panic("cannot enable the msi\n"); */
-  /*       return 0; */
-  /*     } */
-  /*   if (register_int_handler(153, e1000e_irq_handler, NULL)) { */
-  /*     // failed.... */
-  /*     panic("cannot register handler\n"); */
-  /*     return 0; */
-  /*   } */
-  /*   if (pci_dev_unmask_msi(pdev, 153)) { */
-  /*     panic("cannot unmask msi\n"); */
-  /*     return 0; */
-  /*   } */
-  /* } else { */
-  /*   panic("pci_find_device returns null\n"); */
-  /*   return 0; */
-  /* } */
-  // register the interrupt handler
-  register_irq_handler(IRQ_NUMBER, e1000e_irq_handler, NULL);
-  /* nk_unmask_irq(11); */
-  for(int i = 12; i < 256; i++) {
-    DEBUG("init fn: unmask irq %d\n", i);
-    nk_unmask_irq(i);
+  struct pci_dev* pdev = pci_find_device(state->bus_num, state->dev_num, 0);
+  if(pdev != NULL) {
+    if (pci_dev_enable_msi(pdev, 153, 1, 0)) {
+      // failed to enable...
+      panic("cannot enable the msi\n");
+      return 0;
+    }
+    
+    if (register_int_handler(153, e1000e_irq_handler, NULL)) {
+      // failed....
+      panic("cannot register handler\n");
+      return 0;
+    }
+    if (pci_dev_unmask_msi(pdev, 153)) {
+      panic("cannot unmask msi\n");
+      return 0;
+    }
+  } else {
+    panic("pci_find_device returns null\n");
+    return 0;
   }
+  // register the interrupt handler
+  // register_irq_handler(IRQ_NUMBER, e1000e_irq_handler, NULL);
+  /* nk_unmask_irq(11); */
+  /* for(int i = 12; i < 256; i++) { */
+  /*   DEBUG("init fn: unmask irq %d\n", i); */
+  /*   nk_unmask_irq(i); */
+  /* } */
   /* nk_unmask_irq(IRQ_NUMBER); */
   // interrupt delay value = 0 -> does not delay
   WRITE_MEM(state->dev, E1000E_TIDV_OFFSET, 0);
@@ -776,7 +832,7 @@ int e1000e_pci_init(struct naut_info * naut) {
   // -> interrupt when the device receives a package
   WRITE_MEM(state->dev, E1000E_RDTR_OFFSET, 0);
   // enable only transmit descriptor written back and receive interrupt timer
-  WRITE_MEM(state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
+  // WRITE_MEM(state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
   // after the interrupt is turned on, the interrupt handler is called
   // due to the transmit descriptor queue empty.
 

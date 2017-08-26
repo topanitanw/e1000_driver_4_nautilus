@@ -305,13 +305,11 @@ int e1000e_post_send(void*, uint8_t*, uint64_t,
                     void (*)(nk_net_dev_status_t, void*), void*);
 int e1000e_post_receive(void*, uint8_t*, uint64_t,
                        void (*)(nk_net_dev_status_t, void*), void*);
-
 void e1000e_disable_all_int();
 void e1000e_trigger_int();
 void e1000e_trigger_int_num(uint32_t int_num);
 void e1000e_legacy_int_off();
 void e1000e_legacy_int_on();
-
 int e1000e_pci_init(struct naut_info * naut);
 int e1000e_pci_deinit();
 

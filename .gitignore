@@ -1,0 +1,7 @@
+*.o
+*.cmd
+tags
+.config*
+!.config
+*.bin
+*.iso

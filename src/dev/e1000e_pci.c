@@ -91,7 +91,7 @@ inline void WRITE_MEM64(struct e1000e_dev* dev, uint64_t offset, uint64_t val) {
   (*(volatile uint32_t*)(dev->mem_start+offset)) = val;
 }
 
-// initialize ring buffer to hold transmit descriptors
+// initialize ring buffer to hold transmit descriptors 
 static int e1000e_init_transmit_ring(struct e1000e_state *state) {
   TXMAP = malloc(sizeof(struct e1000e_map_ring));
   if (!TXMAP) {
@@ -157,7 +157,6 @@ static int e1000e_init_transmit_ring(struct e1000e_state *state) {
   // will be zero when emulating hardware
   WRITE_MEM(state->dev, E1000E_TIPG_OFFSET,
             E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1_IEEE8023 | E1000E_TIPG_IPGR2_IEEE8023);
-
   DEBUG("init tx fn: TIPG = 0x%08x expects 0x%08x\n",
         READ_MEM(state->dev, E1000E_TIPG_OFFSET),
         E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1_IEEE8023 | E1000E_TIPG_IPGR2_IEEE8023);
@@ -765,6 +764,7 @@ int e1000e_pci_init(struct naut_info * naut) {
   uint64_t mac_all = ((uint64_t)mac_low+((uint64_t)mac_high<<32)) & 0xffffffffffff;
   DEBUG("e1000e mac_all = 0x%lX\n", mac_all);
   DEBUG("e1000e mac_high = 0x%x mac_low = 0x%x\n", mac_high, mac_low);
+
   // set the bit 22th of GCR register
   uint32_t gcr_old = READ_MEM(state->dev, E1000E_GCR_OFFSET);
   WRITE_MEM(state->dev, E1000E_GCR_OFFSET, gcr_old | E1000E_GCR_B22);
@@ -791,7 +791,6 @@ int e1000e_pci_init(struct naut_info * naut) {
   DEBUG("init fn: status.lu 0x%01x %s\n",
         (status_reg & E1000E_STATUS_LU) >> 1,
         (status_reg & E1000E_STATUS_LU) ? "link is up.":"link is down.");
-
   e1000e_init_receive_ring(state);
   e1000e_init_transmit_ring(state);
   WRITE_MEM(state->dev, E1000E_IMC_OFFSET, 0);
@@ -832,6 +831,7 @@ int e1000e_pci_init(struct naut_info * naut) {
   // -> interrupt when the device receives a package
   WRITE_MEM(state->dev, E1000E_RDTR_OFFSET, 0);
   // enable only transmit descriptor written back and receive interrupt timer
+
   // WRITE_MEM(state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
   // after the interrupt is turned on, the interrupt handler is called
   // due to the transmit descriptor queue empty.

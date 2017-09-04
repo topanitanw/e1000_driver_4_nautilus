@@ -71,12 +71,13 @@
 #define E1000E_FCAL_OFFSET    0x00028
 #define E1000E_FCAH_OFFSET    0x0002C
 #define E1000E_FCT_OFFSET     0x00030
+
 // transmit
 #define E1000E_TDBAL_OFFSET   0x3800   // transmit descriptor base address low check
 #define E1000E_TDBAH_OFFSET   0x3804   // transmit descriptor base address high check
 #define E1000E_TDLEN_OFFSET   0x3808   // transmit descriptor list length check
 #define E1000E_TDH_OFFSET     0x3810   // transmit descriptor head check
-#define E1000E_TDT_OFFSET     0x3818   // transmit descriptor tail check
+#define E1000E_TDT_OFFSET     0x3818   // transmit descript828or tail check
 #define E1000E_TCTL_OFFSET    0x0400   // transmit control check check
 #define E1000E_TIPG_OFFSET    0x0410   // transmit interpacket gap check
 #define E1000E_TXDCTL_OFFSET  0x03828  // transmit descriptor control r/w check
@@ -93,7 +94,7 @@
 #define E1000E_RCTL_OFFSET    0x0100   // receive control check
 #define E1000E_RDTR_OFFSET    0x2820   // receive delay timer check
 #define E1000E_RSRPD_OFFSET   0x02C00  // receive small packet detect interrupt r/w
-
+#define E1000E_RXDCTL_OFFSET  0x2828   // receive descriptor control
 // error
 #define E1000E_TPT_OFFSET     0x40D4   // total package transmit
 #define E1000E_TPR_OFFSET     0x40D0   // total package receive
@@ -121,6 +122,7 @@
 #define E1000E_CTRL_RST              (1<<26)     // reset
 #define E1000E_CTRL_RFCE             (1<<27)     // receive flow control enable
 #define E1000E_CTRL_TFCE             (1<<28)     // transmit control flow enable
+
 // Status
 #define E1000E_STATUS_FD             1           // full, half duplex = 1, 0
 #define E1000E_STATUS_LU             (1<<1)      // link up established = 1
@@ -128,16 +130,26 @@
 #define E1000E_STATUS_SPEED_100M     (1<<8)
 #define E1000E_STATUS_SPEED_1G       (2<<8)
 #define E1000E_STATUS_SPEED_MASK     (3<<8)
+
 // E1000E Transmit Control Register
 #define E1000E_TCTL_EN               (1 << 1)    // transmit enable
 #define E1000E_TCTL_PSP              (1 << 3)    // pad short packet
 #define E1000E_TCTL_CT               (0x0f << 4) // collision threshold
-#define E1000E_TCTL_COLD_FD          (0x40 << 12)// collision distance full duplex
-#define E1000E_TCTL_COLD_HD          (0x200 << 12) // collision distance half duplex
+// collision distance full duplex 0x03f, 
+#define E1000E_TCTL_COLD_FD          (0x03f << 12)
+// collision distance half duplex 0x1ff 
+#define E1000E_TCTL_COLD_HD          (0x1ff << 12)
+
+// E1000E Transmit Descriptor Control
+//// granularity thresholds unit 0b cache line, 1b descriptors
+#define E1000E_TXDCTL_GRAN           (1<<24)
+// CLEANUP
+#define E1000E_TXDCTL_WTHRESH        0 //(1<<16)
+
 // IPG = inter packet gap
-#define E1000E_TIPG_IPGT             0x0a          // IPG transmit time
-#define E1000E_TIPG_IPGR1_IEEE8023   (0x8 << 10)   // TIPG1 for IEEE802.3
-#define E1000E_TIPG_IPGR2_IEEE8023   (0x6 << 20)   // TIPG2 for IEEE802.3
+#define E1000E_TIPG_IPGT             0x08          // IPG transmit time
+#define E1000E_TIPG_IPGR1            (0x2 << 10)   // TIPG1 = 2
+#define E1000E_TIPG_IPGR2            (0xa << 20)   // TIPG2 = 10
 
 // E1000E Receive Control Register 
 #define E1000E_RCTL_EN               (1 << 1)    // Receiver Enable
@@ -163,7 +175,14 @@
 #define E1000E_RCTL_DPF              (1 << 22)   // Discard Pause Frames
 #define E1000E_RCTL_PMCF             (1 << 23)   // Pass MAC Control Frames
 #define E1000E_RCTL_SECRC            (1 << 26)   // Strip Ethernet CRC
- 
+
+// RXDCTL
+#define E1000E_RXDCTL_GRAN           (1 << 24)   // Granularity
+#define E1000E_RXDCTL_WTHRESH        (1 << 16)   // number of written-back rxd
+#define E1000E_RXDCTL_PTHRESH        (1 << 0)    // number of prefetching rxd
+#define E1000E_RXDCTL_HTHRESH        (1<<8)      // number of available host rxd
+
+
 // Buffer Sizes
 // RCTL.BSEX = 0
 #define E1000E_RCTL_BSIZE_256        (3 << 16)
@@ -310,7 +329,8 @@ void e1000e_trigger_int();
 void e1000e_trigger_int_num(uint32_t int_num);
 void e1000e_legacy_int_off();
 void e1000e_legacy_int_on();
+void e1000e_msi_on();
 int e1000e_pci_init(struct naut_info * naut);
 int e1000e_pci_deinit();
-
+void e1000e_send();
 #endif

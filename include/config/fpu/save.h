@@ -1,0 +1,1 @@
+#undef NAUT_CONFIG_FPU_SAVE

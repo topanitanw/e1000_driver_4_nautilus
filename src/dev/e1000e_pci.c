@@ -145,21 +145,24 @@ static int e1000e_init_transmit_ring(struct e1000e_state *state) {
         READ_MEM(state->dev, E1000E_TDLEN_OFFSET),
         READ_MEM(state->dev, E1000E_TDH_OFFSET),
         READ_MEM(state->dev, E1000E_TDT_OFFSET));
-  // write tctl register
+  // TCTL Reg: EN = 1b, PSP = 1b, CT = 0x0f (16d), COLD = 0x3F (63d)
   WRITE_MEM(state->dev, E1000E_TCTL_OFFSET,
-            E1000E_TCTL_EN | E1000E_TCTL_PSP | E1000E_TCTL_COLD_FD);
+            E1000E_TCTL_EN | E1000E_TCTL_PSP | E1000E_TCTL_CT | E1000E_TCTL_COLD_FD);
   DEBUG("init tx fn: TCTL = 0x%08x expects 0x%08x\n",
         READ_MEM(state->dev, E1000E_TCTL_OFFSET),
-        E1000E_TCTL_EN | E1000E_TCTL_PSP | E1000E_TCTL_COLD_FD);
-
+        E1000E_TCTL_EN | E1000E_TCTL_PSP | E1000E_TCTL_CT | E1000E_TCTL_COLD_FD);
+  // TXDCTL Reg: set WTHRESH = 1b, GRAN = 1b,
+  // other fields = 0b except bit 22th = 1b
+  WRITE_MEM(state->dev, E1000E_TXDCTL_OFFSET,
+            E1000E_TXDCTL_GRAN | E1000E_TXDCTL_WTHRESH | (1<<22));
   // write tipg regsiter
   // 00,00 0000 0110,0000 0010 00,00 0000 1010 = 0x0060200a
   // will be zero when emulating hardware
   WRITE_MEM(state->dev, E1000E_TIPG_OFFSET,
-            E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1_IEEE8023 | E1000E_TIPG_IPGR2_IEEE8023);
+            E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
   DEBUG("init tx fn: TIPG = 0x%08x expects 0x%08x\n",
         READ_MEM(state->dev, E1000E_TIPG_OFFSET),
-        E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1_IEEE8023 | E1000E_TIPG_IPGR2_IEEE8023);
+        E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
   return 0;
 }
 
@@ -221,12 +224,18 @@ static int e1000e_init_receive_ring(struct e1000e_state *state) {
         READ_MEM(state->dev, E1000E_RDT_OFFSET));
   RXD_PREV_HEAD = 0;
   RXD_TAIL = 0;
+
+  WRITE_MEM(state->dev, E1000E_RXDCTL_OFFSET,
+            E1000E_RXDCTL_GRAN | E1000E_RXDCTL_WTHRESH);
+  DEBUG("init rx fn: RXDCTL=0x%08x expects 0x08\n",
+        READ_MEM(state->dev, E1000E_RXDCTL_OFFSET),
+        E1000E_RXDCTL_GRAN | E1000E_RXDCTL_WTHRESH);  
   // write rctl register specifing the receive mode
   uint32_t rctl_reg = E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_PMCF | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048;
 
   // receive buffer threshold and size
-  DEBUG("init rx fn: rctl_reg = 0x%08x, expected value: 0x%08x\n",
-        rctl_reg, 0x0083832e);
+  /* DEBUG("init rx fn: rctl_reg = 0x%08x, expected value: 0x%08x\n", */
+  /*       rctl_reg, 0x0083832e); */
   // WRITE_MEM(state->dev, RCTL_OFFSET, 0x0083832e);
   WRITE_MEM(state->dev, E1000E_RCTL_OFFSET, rctl_reg);
   DEBUG("init rx fn: RCTL=0x%08x expects  0x%08x\n",
@@ -239,15 +248,16 @@ static int e1000e_send_packet(uint8_t* packet_addr,
                               uint64_t packet_size,
                               struct e1000e_state *state) {
   DEBUG("e1000e_send_packet fn\n");
-  DEBUG("packet_addr 0x%p packet_size: %d\n", packet_addr, packet_size);
+  DEBUG("send pkt fn: pkt_addr 0x%p pkt_size: %d\n", packet_addr, packet_size);
   TXD_TAIL = READ_MEM(state->dev, E1000E_TDT_OFFSET);
-  DEBUG("status before sending a packet: TDH = %d TDT = %d tail_pos = %d\n",
+  DEBUG("send pkt fn: before sending TDH = %d TDT = %d tail_pos = %d\n",
         READ_MEM(state->dev, E1000E_TDH_OFFSET),
         READ_MEM(state->dev, E1000E_TDT_OFFSET),
         TXD_TAIL);
-  DEBUG("tpt total packet transmit: %d\n", READ_MEM(state->dev, E1000E_TPT_OFFSET));
+  DEBUG("send pkt fn: tpt total packet transmit: %d\n",
+        READ_MEM(state->dev, E1000E_TPT_OFFSET));
   if(packet_size > MAX_TU) {
-    ERROR("packet is too large.\n");
+    ERROR("send pkt fn: packet is too large.\n");
     return -1;
   }
 
@@ -265,31 +275,38 @@ static int e1000e_send_packet(uint8_t* packet_addr,
   // interrupt delay enable
   // if ide = 0 and rs = 1, the transmit interrupt will occur immediately
   // after the packet is sent.
-  // TXD_CMD(TXD_TAIL).ide = 1;
+  TXD_CMD(TXD_TAIL).ide = 0;
   // report the status of the descriptor
   TXD_CMD(TXD_TAIL).rs = 1;
 
   // increment transmit descriptor list tail by 1
-  DEBUG("moving the tail\n");
+  DEBUG("send pkt fn: moving the tail\n");
   TXD_TAIL = TXD_INC(1, TXD_TAIL);
   WRITE_MEM(state->dev, E1000E_TDT_OFFSET, TXD_TAIL);
-  DEBUG("status after moving tail: TDH = %d TDT = %d tail_pos = %d\n",
+  DEBUG("send pkt fn: after moving tail TDH = %d TDT = %d tail_pos = %d\n",
         READ_MEM(state->dev, E1000E_TDH_OFFSET),
         READ_MEM(state->dev, E1000E_TDT_OFFSET),
         TXD_TAIL);
-  DEBUG("transmit error: %d\n",
+  DEBUG("send pkt fn: transmit error %d\n",
         TXD_STATUS(TXD_PREV_HEAD).ec | TXD_STATUS(TXD_PREV_HEAD).lc);
-  DEBUG("tpt total packet transmit: %d\n", READ_MEM(state->dev, E1000E_TPT_OFFSET));
-  DEBUG("e1000e_send_packet fn end\n");
+  DEBUG("send pkt fn: txd cmd.rs = %d status.dd = %d\n",
+        TXD_CMD(TXD_PREV_HEAD).rs | TXD_STATUS(TXD_PREV_HEAD).dd);  
+  DEBUG("send pkt fn: tpt total packet transmit: %d\n",
+        READ_MEM(state->dev, E1000E_TPT_OFFSET));
+  uint32_t status_pci = pci_cfg_readw(state->bus_num, state->dev_num,
+                                      0, E1000E_PCI_STATUS_OFFSET);
+  DEBUG("send pkt fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);
+  DEBUG("e1000e send packet fn: end --------------------\n");
   return 0;
 }
 
 static int e1000e_receive_packet(uint8_t* buffer,
                                  uint64_t buffer_size,
                                  struct e1000e_state *state) {
-  DEBUG("e1000e receive packet fn buffer = 0x%p, len = %lu\n",
+  DEBUG("e1000e receive packet fn: buffer = 0x%p, len = %lu\n",
         buffer, buffer_size);
-  DEBUG("before moving tail head: %d, tail: %d\n",
+  DEBUG("receive pkt fn: before moving tail head: %d, tail: %d\n",
         READ_MEM(state->dev, E1000E_RDH_OFFSET),
         READ_MEM(state->dev, E1000E_RDT_OFFSET));
   // if the buffer size is changed,
@@ -319,7 +336,7 @@ static int e1000e_receive_packet(uint8_t* buffer,
         rctl |= E1000E_RCTL_BSIZE_16384;
         break;
       default:
-        ERROR("Unmatch buffer size\n");
+        ERROR("receive pkt fn: unmatch buffer size\n");
         return -1;
     }
     WRITE_MEM(state->dev, E1000E_RCTL_OFFSET, rctl);
@@ -333,11 +350,14 @@ static int e1000e_receive_packet(uint8_t* buffer,
   RXD_ADDR(RXD_TAIL) = (uint64_t*) buffer;
   WRITE_MEM(state->dev, E1000E_RDT_OFFSET, RXD_INC(RXD_TAIL, 1));
   RXD_TAIL = RXD_INC(RXD_TAIL, 1);
-  DEBUG("after moving tail head: %d, prev_head: %d tail: %d\n",
+  DEBUG("receive pkt fn: after moving tail head: %d, prev_head: %d tail: %d\n",
         READ_MEM(state->dev, E1000E_RDH_OFFSET), RXD_PREV_HEAD,
         READ_MEM(state->dev, E1000E_RDT_OFFSET));
-
-  DEBUG("end e1000e receive paket fn -----------------------\n");
+  uint32_t status_pci = pci_cfg_readw(state->bus_num, state->dev_num,
+                                      0, E1000E_PCI_STATUS_OFFSET);
+  DEBUG("receive pkt fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);
+  DEBUG("e1000e receive pkt fn: end -----------------------\n");
   return 0;
 }
 
@@ -531,6 +551,7 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
 
 void e1000e_disable_all_int() {
   WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
+  DEBUG("disable all int fn: end --------------------\n");
   return;
 }
 
@@ -552,7 +573,8 @@ void e1000e_trigger_int() {
   uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
                                       0, E1000E_PCI_STATUS_OFFSET);
   DEBUG("trigger int fn: status_pci 0x%04x int %d\n",
-        status_pci, status_pci & E1000E_PCI_STATUS_INT);  
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);
+  DEBUG("trigger int fn: end -------------------- \n");    
   return;
 }
 
@@ -572,20 +594,25 @@ void e1000e_trigger_int_num(uint32_t int_num) {
 
   uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
                                       0, E1000E_PCI_STATUS_OFFSET);
-  DEBUG("trigger int fn: status_pci 0x%04x int %d\n",
-        status_pci, status_pci & E1000E_PCI_STATUS_INT);  
+  DEBUG("trigger int num fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);
+  DEBUG("trigger int num fn: end -------------------- \n");      
   return;
 }
 
 void e1000e_legacy_int_off() {
   uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN | E1000E_PCI_CMD_INT_DISABLE;
-  DEBUG("legacy int off: pci cmd: 0x%04x\n", pci_cmd);
+  DEBUG("legacy int off fn: pci cmd: 0x%04x\n", pci_cmd);
   pci_cfg_writew(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET, pci_cmd);
-  DEBUG("legacy int off: pci_cmd 0x%04x expects  0x%04x\n",
-        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET),
+  DEBUG("legacy int off fn: pci_cmd 0x%04x expects  0x%04x\n",
+        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                      0, E1000E_PCI_CMD_OFFSET),
         pci_cmd);
-  DEBUG("legacy int off: pci status 0x%04x\n",
-        pci_cfg_readw(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_STATUS_OFFSET));
+  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                                      0, E1000E_PCI_STATUS_OFFSET);
+  DEBUG("legacy int off fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);    
+  DEBUG("legacy int off fn: end -------------------- \n");      
   return;
 }
 
@@ -594,15 +621,45 @@ void e1000e_legacy_int_on() {
   DEBUG("legacy int on: pci cmd: 0x%04x\n", pci_cmd);
   pci_cfg_writew(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET, pci_cmd);
   DEBUG("legacy int on: pci_cmd 0x%04x expects  0x%04x\n",
-        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET),
+        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                      0, E1000E_PCI_CMD_OFFSET),
         pci_cmd);
-  DEBUG("legacy int on: pci status 0x%04x\n",
-        pci_cfg_readw(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_STATUS_OFFSET));
+  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                                      0, E1000E_PCI_STATUS_OFFSET);  
+  DEBUG("legacy int on fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);    
+  DEBUG("legacy int on: end --------------------\n"); 
   return;
 }
 
+void e1000e_msi_on() {
+  struct pci_dev* pdev = pci_find_device(dev_state->bus_num, dev_state->dev_num, 0);
+  if(pdev != NULL) {
+    if (pci_dev_enable_msi(pdev, 153, 1, 0)) {
+      // failed to enable...
+      panic("msi on fn: cannot enable the msi\n");
+      return;
+    }
+    
+    if (register_int_handler(153, e1000e_irq_handler, NULL)) {
+      // failed....
+      panic("msi on fn: cannot register handler\n");
+      return;
+    }
+    if (pci_dev_unmask_msi(pdev, 153)) {
+      panic("msi on fn: cannot unmask msi\n");
+      return;
+    }
+  } else {
+    panic("msi on fn: pci_find_device returns null\n");
+    return;
+  }
+  DEBUG("msi on fn: end --------------------\n");   
+}
+
+
 int e1000e_pci_init(struct naut_info * naut) {
-  // !!!
+  // !!! TODO: 
   struct e1000e_state *state = malloc(sizeof(struct e1000e_state));
   dev_state = state;
   struct pci_info *pci = naut->sys.pci;
@@ -796,27 +853,30 @@ int e1000e_pci_init(struct naut_info * naut) {
   WRITE_MEM(state->dev, E1000E_IMC_OFFSET, 0);
   DEBUG("init fn: IMC = 0x%08x expects 0x%08x\n",
         READ_MEM(state->dev, E1000E_IMC_OFFSET), 0);
-  struct pci_dev* pdev = pci_find_device(state->bus_num, state->dev_num, 0);
-  if(pdev != NULL) {
-    if (pci_dev_enable_msi(pdev, 153, 1, 0)) {
-      // failed to enable...
-      panic("cannot enable the msi\n");
-      return 0;
-    }
-    
-    if (register_int_handler(153, e1000e_irq_handler, NULL)) {
-      // failed....
-      panic("cannot register handler\n");
-      return 0;
-    }
-    if (pci_dev_unmask_msi(pdev, 153)) {
-      panic("cannot unmask msi\n");
-      return 0;
-    }
-  } else {
-    panic("pci_find_device returns null\n");
-    return 0;
+  for(uint8_t i = 0; i < 55; i++) {
+    nk_unmask_irq(i);
   }
+  /* struct pci_dev* pdev = pci_find_device(state->bus_num, state->dev_num, 0); */
+  /* if(pdev != NULL) { */
+  /*   if (pci_dev_enable_msi(pdev, 153, 1, 0)) { */
+  /*     // failed to enable... */
+  /*     panic("cannot enable the msi\n"); */
+  /*     return 0; */
+  /*   } */
+    
+  /*   if (register_int_handler(153, e1000e_irq_handler, NULL)) { */
+  /*     // failed.... */
+  /*     panic("cannot register handler\n"); */
+  /*     return 0; */
+  /*   } */
+  /*   if (pci_dev_unmask_msi(pdev, 153)) { */
+  /*     panic("cannot unmask msi\n"); */
+  /*     return 0; */
+  /*   } */
+  /* } else { */
+  /*   panic("pci_find_device returns null\n"); */
+  /*   return 0; */
+  /* } */
   // register the interrupt handler
   // register_irq_handler(IRQ_NUMBER, e1000e_irq_handler, NULL);
   /* nk_unmask_irq(11); */
@@ -824,7 +884,7 @@ int e1000e_pci_init(struct naut_info * naut) {
   /*   DEBUG("init fn: unmask irq %d\n", i); */
   /*   nk_unmask_irq(i); */
   /* } */
-  /* nk_unmask_irq(IRQ_NUMBER); */
+  // nk_unmask_irq(IRQ_NUMBER);
   // interrupt delay value = 0 -> does not delay
   WRITE_MEM(state->dev, E1000E_TIDV_OFFSET, 0);
   // receive interrupt delay timer = 0
@@ -843,16 +903,18 @@ int e1000e_pci_init(struct naut_info * naut) {
   /* uint32_t status_pci = pci_cfg_readw(state->bus_num, state->dev_num, */
   /*                                     0, E1000E_PCI_STATUS_OFFSET); */
   /* DEBUG("init fn: status_pci 0x%04x int %d\n", */
-  /*       status_pci, status_pci & E1000E_PCI_STATUS_INT); */
+  /*       status_pci, status_pci & E1000E_PCI_STATUS_INT);  */
 
+  WRITE_MEM(state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
   uint32_t icr_reg = READ_MEM(state->dev, E1000E_ICR_OFFSET);
-  DEBUG("init fn: IMS = 0x%08x ICR = 0x%08x\n",
+  DEBUG("init fn: IMS = 0x%08x\n",
         READ_MEM(state->dev, E1000E_IMS_OFFSET), icr_reg);
-  DEBUG("init fn: TXQE = 0x%08x TXD_LOW = 0x%08x TXDW = 0x%08x\n",
+  DEBUG("init fn: ICR = 0x%08x TXQE = 0x%08x TXD_LOW = 0x%08x TXDW = 0x%08x\n",
         icr_reg,
         E1000E_ICR_TXQE & icr_reg,
         E1000E_ICR_TXD_LOW & icr_reg,
         E1000E_ICR_TXDW & icr_reg);
+  DEBUG("init fn: end init fn --------------------\n");
   return 0;
 }
 
@@ -860,3 +922,11 @@ int e1000e_pci_deinit() {
   INFO("deinited\n");
   return 0;
 }
+
+// CLEANUP
+void e1000e_send() {
+  uint8_t pkt_size = 30;
+  uint8_t *pkt = malloc(30);
+  e1000e_send_packet(pkt, pkt_size, dev_state);
+}
+  

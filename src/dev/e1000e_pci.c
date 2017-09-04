@@ -557,18 +557,21 @@ void e1000e_disable_all_int() {
 
 void e1000e_trigger_int() {
   // imc is a written only register.
+  DEBUG("trigger int fn: reset all ints by writing to IMC with 0xffffffff\n");
   WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
-  // enable only transmit descriptor written back and receive interrupt timer  
+  // enable only transmit descriptor written back and receive interrupt timer
+  DEBUG("trigger int fn: set IMS with TXDW RXT0\n");  
   WRITE_MEM(dev_state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
 
   if ((E1000E_ICR_TXDW | E1000E_ICR_RXT0) != READ_MEM(dev_state->dev, E1000E_IMS_OFFSET)) {
-    ERROR("IMS reg: the written and read values do not match\n");
+    ERROR("trigger int fn: the written and read values of IMS reg do not match\n");
     return;
   }
   // after the interrupt is turned on, the interrupt handler is called
   // due to the transmit descriptor queue empty.
   // set an interrupt on ICS register
   // ICS is w reg which means its value cannot be read back.
+  DEBUG("trigger int fn: writing to ICS reg\n");
   WRITE_MEM(dev_state->dev, E1000E_ICS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
   uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
                                       0, E1000E_PCI_STATUS_OFFSET);
@@ -848,13 +851,23 @@ int e1000e_pci_init(struct naut_info * naut) {
   DEBUG("init fn: status.lu 0x%01x %s\n",
         (status_reg & E1000E_STATUS_LU) >> 1,
         (status_reg & E1000E_STATUS_LU) ? "link is up.":"link is down.");
+ 
   e1000e_init_receive_ring(state);
   e1000e_init_transmit_ring(state);
   WRITE_MEM(state->dev, E1000E_IMC_OFFSET, 0);
   DEBUG("init fn: IMC = 0x%08x expects 0x%08x\n",
         READ_MEM(state->dev, E1000E_IMC_OFFSET), 0);
-  for(uint8_t i = 0; i < 55; i++) {
-    nk_unmask_irq(i);
+  /* for(uint8_t i = 0; i < 55; i++) { */
+  /*   nk_unmask_irq(i); */
+  /* } */
+  struct sys_info* sys = &(nk_get_nautilus_info()->sys);
+  struct ioapic* ioapic;
+
+  for (int i = 1; i < sys->num_ioapics; i++) {
+    ioapic = sys->ioapics[i];
+    for (int j = 0; j < ioapic->num_entries; j++) {
+      ioapic_unmask_irq(ioapic,j);
+    }
   }
   /* struct pci_dev* pdev = pci_find_device(state->bus_num, state->dev_num, 0); */
   /* if(pdev != NULL) { */

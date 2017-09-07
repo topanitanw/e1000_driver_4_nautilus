@@ -75,6 +75,9 @@
 #include <dev/lua_script.h>
 #endif
 
+#ifdef NAUT_CONFIG_GPIO
+#include <dev/gpio.h>
+#endif
 
 #define MAX_CMD 80
 
@@ -124,7 +127,8 @@ static void burner(void *in, void **out)
 
   while(1) {
     start = nk_sched_get_realtime();
-    LOOP();
+    //LOOP();
+    udelay(10);
     end = nk_sched_get_realtime();
     dur = end - start;
     //	nk_vc_printf("%s (tid %llu) start=%llu, end=%llu left=%llu\n",a->name,get_cur_thread()->tid, start, end,a->size_ns);
@@ -155,7 +159,7 @@ static int launch_aperiodic_burner(char *name, uint64_t size_ns, uint32_t tpr, u
   a->constraints.interrupt_priority_class = (uint8_t) tpr;
   a->constraints.aperiodic.priority=priority;
 
-  if (nk_thread_start(burner, (void*)a , NULL, 1, PAGE_SIZE_4KB, &tid, -1)) { 
+  if (nk_thread_start(burner, (void*)a , NULL, 1, PAGE_SIZE_4KB, &tid, 1)) { 
     free(a);
     return -1;
   } else {
@@ -183,7 +187,7 @@ static int launch_sporadic_burner(char *name, uint64_t size_ns, uint32_t tpr, ui
   a->constraints.sporadic.deadline = deadline;
   a->constraints.sporadic.aperiodic_priority = aperiodic_priority;
 
-  if (nk_thread_start(burner, (void*)a , NULL, 1, PAGE_SIZE_4KB, &tid, -1)) {
+  if (nk_thread_start(burner, (void*)a , NULL, 1, PAGE_SIZE_4KB, &tid, 1)) {
     free(a);
     return -1;
   } else {
@@ -210,7 +214,7 @@ static int launch_periodic_burner(char *name, uint64_t size_ns, uint32_t tpr, ui
   a->constraints.periodic.period = period;
   a->constraints.periodic.slice = slice;
 
-  if (nk_thread_start(burner, (void*)a , NULL, 1, PAGE_SIZE_4KB, &tid, -1)) {
+  if (nk_thread_start(burner, (void*)a , NULL, 1, PAGE_SIZE_4KB, &tid, 1)) {
     free(a);
     return -1;
   } else {
@@ -757,16 +761,96 @@ int handle_run(char *buf)
   return 0;
 }    
 
+int handle_ioapic(char *buf)
+{
+  uint32_t num, pin;
+  struct sys_info *sys = &nk_get_nautilus_info()->sys;
+  struct ioapic *io;
+  char all[80];
+  char what[80];
+  int mask=0;
+
+  if (sscanf(buf,"ioapic %u %s %s",&num,all,what)==3) { 
+    if (num>=sys->num_ioapics) { 
+	    nk_vc_printf("unknown ioapic\n");
+	    return 0;
+    }
+    if (what[0]!='m' && what[0]!='u') { 
+	    nk_vc_printf("unknown ioapic request (mask|unmask)\n");
+	    return 0;
+    }
+    mask = what[0]=='m';
+	
+    if (all[0]!='a') { 
+	    if (sscanf(all,"%u",&pin)!=1) { 
+        nk_vc_printf("unknown ioapic request (pin|all)\n");
+        return 0;
+	    }
+	    if (mask) { 
+        nk_vc_printf("masking ioapic %u pin %u\n",num,pin);
+        ioapic_mask_irq(sys->ioapics[num], pin);
+	    } else {
+        nk_vc_printf("unmasking ioapic %u pin %u\n",num,pin);
+        ioapic_unmask_irq(sys->ioapics[num], pin);
+	    }
+    } else {
+	    for (pin=0;pin<sys->ioapics[num]->num_entries;pin++) { 
+        if (mask) { 
+          nk_vc_printf("masking ioapic %u pin %u\n",num,pin);
+          ioapic_mask_irq(sys->ioapics[num], pin);
+        } else {
+          nk_vc_printf("unmasking ioapic %u pin %u\n",num,pin);
+          ioapic_unmask_irq(sys->ioapics[num], pin);
+        }
+	    }
+    }
+    return 0;
+  }
+
+  if (sscanf(buf,"ioapic %s",what)==1) { 
+    if (what[0]=='l' || what[0]=='d') { 
+	    for (num=0;num<sys->num_ioapics;num++) {
+        io = sys->ioapics[num];
+        nk_vc_printf("ioapic %u: id=%u %u pins address=%p\n",
+                     num, io->id, io->num_entries, io->base);
+        if (what[0]=='d') { 
+          uint64_t entry;
+          for (pin=0;pin<io->num_entries;pin++) { 
+            entry = (uint64_t) ioapic_read_reg(io, 0x10 + 2*pin);
+            entry |= ((uint64_t) ioapic_read_reg(io, 0x10 + 2*pin+1));
+
+            nk_vc_printf("  pin %2u -> %016lx (dest 0x%lx mask %lu vec 0x%lx%s)\n", 
+                         pin, entry, (entry>>56)&0xffLU, (entry>>16)&0x1LU,
+                         entry&0xffLU, (entry&0xffLU) == 0xf7 ? " panic" : "");
+          }
+        }
+	    }
+	    return 0;
+    } else {
+	    nk_vc_printf("Unknown ioapic request\n");
+	    return 0;
+    }				       
+  }
+    
+  nk_vc_printf("unknown ioapic request\n");
+  return 0;
+}
+
+	
+
+
 int handle_pci(char *buf)
 {
   int bus, slot, func, off;
+  uint64_t data;
+  char bwdq; 
 
   if (strncmp(buf,"pci l",5)==0) { 
     pci_dump_device_list();
     return 0;
   }
 
-  if (sscanf(buf,"pci raw %x %x %x\n", &bus, &slot, &func)==3) { 
+  if (sscanf(buf,"pci raw %x %x %x", &bus, &slot, &func)==3) { 
     int i,j;
     uint32_t v;
     for (i=0;i<256;i+=32) {
@@ -780,7 +864,7 @@ int handle_pci(char *buf)
     return 0;
   }
 
-  if (sscanf(buf,"pci dev %x %x %x\n", &bus, &slot, &func)==3) { 
+  if (sscanf(buf,"pci dev %x %x %x", &bus, &slot, &func)==3) { 
     pci_dump_device(pci_find_device(bus,slot,func));
     return 0;
   }
@@ -790,11 +874,113 @@ int handle_pci(char *buf)
     return 0;
   }
 
+  if (((bwdq='w', sscanf(buf,"pci poke w %x %x %x %x %x", &bus, &slot, &func, &off,&data))==5) ||
+      ((bwdq='d', sscanf(buf,"pci poke d %x %x %x %x %x", &bus, &slot, &func, &off,&data))==5) ||
+      ((bwdq='d', sscanf(buf,"pci poke %x %x %x %x %x", &bus, &slot, &func, &off,&data))==5)) {
+    if (bwdq=='w') { 
+      pci_cfg_writew(bus,slot,func,off,(uint16_t)data);
+      nk_vc_printf("PCI[%x:%x.%x:%x] = 0x%04lx\n",bus,slot,func,off,(uint16_t)data);
+    } else {
+      pci_cfg_writel(bus,slot,func,off,(uint32_t)data);
+      nk_vc_printf("PCI[%x:%x.%x:%x] = 0x%08lx\n",bus,slot,func,off,(uint32_t)data);
+    }
+    return 0;
+  }
+
+  if (((bwdq='w', sscanf(buf,"pci peek w %x %x %x %x", &bus, &slot, &func, &off))==4) ||
+      ((bwdq='d', sscanf(buf,"pci peek d %x %x %x %x", &bus, &slot, &func, &off))==4) ||
+      ((bwdq='d', sscanf(buf,"pci peek %x %x %x %x", &bus, &slot, &func, &off))==4)) {
+    if (bwdq=='w') { 
+      data = pci_cfg_readw(bus,slot,func,off);
+      nk_vc_printf("PCI[%x:%x.%x:%x] = 0x%04lx\n",bus,slot,func,off,(uint16_t)data);
+    } else {
+      data = pci_cfg_readl(bus,slot,func,off);
+      nk_vc_printf("PCI[%x:%x.%x:%x] = 0x%08lx\n",bus,slot,func,off,(uint32_t)data);
+    }
+    return 0;
+  }
+
   nk_vc_printf("unknown pci command\n");
 
   return -1;
 }    
 	
+#ifdef NAUT_CONFIG_PROFILE
+int handle_instrument(char *buf)
+{
+  char what[80];
+
+  if (sscanf(buf,"inst%s* %s", what)==1) { 
+    if (!strncasecmp(what,"sta",3)) {
+	    nk_vc_printf("starting instrumentation\n");
+	    nk_instrument_start();
+	    return 0;
+    } else if (!strncasecmp(what,"e",1) || !strncasecmp(what,"sto",3)) {
+	    nk_vc_printf("ending instrumentation\n");
+	    nk_instrument_end();
+	    return 0;
+    } else if (!strncasecmp(what,"c",1)) {
+	    nk_vc_printf("clearing instrumentation\n");
+	    nk_instrument_clear();
+	    return 0;
+    } else if (!strncasecmp(what,"q",1)) {
+	    nk_vc_printf("querying instrumentation\n");
+	    nk_instrument_query();
+	    return 0;
+    } 
+  }
+  nk_vc_printf("unknown instrumentation request\n");
+  return 0;
+}
+#endif
+
+	
+#ifdef NAUT_CONFIG_GPIO
+int handle_gpio(char *buf)
+{
+  char what[80];
+  uint64_t val;
+  uint64_t i;
+  int set = nk_gpio_cpu_mask_check(my_cpu_id());
+
+  if ((sscanf(buf,"gpio %s %lx", what, &val)==2) && what[0]=='s') {
+    nk_vc_printf("sweeping gpio output from 0 to %lx with ~10 us delay\n",val);
+    if (!set) {
+	    nk_gpio_cpu_mask_add(my_cpu_id());
+    }
+    for (i=0;i<val;i++) { 
+	    nk_gpio_output_set(i);
+	    udelay(10);
+    }
+    if (!set) {
+	    nk_gpio_cpu_mask_remove(my_cpu_id());
+    }
+    return 0;
+  }
+
+  if ((sscanf(buf,"gpio %s %lx", what, &val)==2) && what[0]=='o') {
+    nk_vc_printf("setting gpio output to %lx\n",val);
+    if (!set) {
+	    nk_gpio_cpu_mask_add(my_cpu_id());
+    }
+    nk_gpio_output_set(val);
+    if (!set) {
+	    nk_gpio_cpu_mask_remove(my_cpu_id());
+    }
+    return 0;
+  }
+
+  if ((sscanf(buf,"gpio %s",what)==1) && what[0]=='i') {
+    val = nk_gpio_input_get();
+    nk_vc_printf("gpio input is %llx\n",val);
+    return 0;
+  }
+
+  nk_vc_printf("unknown gpio request\n");
+
+  return 0;
+}
+#endif    
 	
 
 static int handle_cmd(char *buf, int n)
@@ -832,10 +1018,14 @@ static int handle_cmd(char *buf, int n)
     nk_vc_printf("help\nexit\nvcs\ncores [n]\ntime [n]\nthreads [n]\n");
     nk_vc_printf("devs | fses | ofs | cat [path]\n");
 #ifdef NAUT_CONFIG_PROFILE
-    nk_vc_printf("profile\n");
+    nk_vc_printf("instrument start|end/stop|clear|query\n");
 #endif
-
-    nk_vc_printf("pci list | pci raw/dev bus slot func | pci dev\n");
+#ifdef NAUT_CONFIG_GPIO
+    nk_vc_printf("gpio in/out/sweep [val]\n");
+#endif
+    nk_vc_printf("ioapic <list|dump> | ioapic num <pin|all> <mask|unmask>\n");
+    nk_vc_printf("pci list | pci raw/dev bus slot func | pci dev [bus slot func]\n");
+    nk_vc_printf("pci peek|poke bus slot func off [val]\n");
     nk_vc_printf("shell name\n");
     nk_vc_printf("regs [t]\npeek [bwdq] x | mem x n [s] | poke [bwdq] x y\nin [bwd] addr | out [bwd] addr data\nrdmsr x [n] | wrmsr x y\ncpuid f [n] | cpuidsub f s\n");
     nk_vc_printf("meminfo [detail]\n");
@@ -860,10 +1050,18 @@ static int handle_cmd(char *buf, int n)
     nk_vc_printf("run path\n");
     return 0;
   }
+  if (!strncasecmp(buf,"ei",2)) {
+    void e1000e_trigger_int();
+    nk_vc_printf("Triggering E1000E interrupt\n");
+    e1000e_trigger_int();
+    return 0;
+  }
+
+
 
 #ifdef NAUT_CONFIG_PROFILE
-  if (!strncasecmp(buf,"profile",7)) {
-    nk_instrument_query();
+  if (!strncasecmp(buf,"inst",4)) {
+    handle_instrument(buf);
     return 0;
   }
 #endif
@@ -875,6 +1073,11 @@ static int handle_cmd(char *buf, int n)
 
   if (!strncasecmp(buf,"devs",4)) {
     nk_dev_dump_devices();
+    return 0;
+  }
+
+  if (!strncasecmp(buf,"ioapic",6)) {
+    handle_ioapic(buf);
     return 0;
   }
 
@@ -1190,6 +1393,16 @@ static int handle_cmd(char *buf, int n)
     phase   *= 1000000; 
     period  *= 1000000;
     slice   *= 1000000;
+    launch_periodic_burner(name,size_ns,tpr,phase,period,slice);
+    return 0;
+  }
+
+  if (sscanf(buf,"burnu p %s %llu %u %llu %llu %llu", name, &size_ns, &tpr, &phase, &period, &slice)==6) { 
+    nk_vc_printf("Starting periodic burner %s with size %llu ms tpr %u phase %llu from now period %llu us slice %llu us\n",name,size_ns,tpr,phase,period,slice);
+    size_ns *= 1000000;
+    phase   *= 1000; 
+    period  *= 1000;
+    slice   *= 1000;
     launch_periodic_burner(name,size_ns,tpr,phase,period,slice);
     return 0;
   }

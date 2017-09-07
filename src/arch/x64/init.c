@@ -461,14 +461,14 @@ init (unsigned long mbd,
     nk_launch_shell("root-shell",0);
 
     runtime_init();
-    e1000e_legacy_int_on();
-    e1000e_trigger_int();
-    e1000e_legacy_int_off();
+    /* e1000e_legacy_int_on(); */
+    /* e1000e_trigger_int(); */
+    /* e1000e_legacy_int_off(); */
     /* e1000e_msi_on(); */
     /* e1000e_trigger_int(); */
     /* e1000e_trigger_int_num(0xffff); */
     /* printk("test udp echo\n"); */
-    /* test_net_udp_echo("e1000e-0", "165.124.183.167", 5000, 11); */
+    test_net_udp_echo("e1000e-0", "165.124.183.167", 5000, 11);
     /* printk("test sending arp request\n"); */
     /* test_net_arp_request(); */
     printk("Nautilus boot thread yielding (indefinitely)\n");

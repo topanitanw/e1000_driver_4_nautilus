@@ -779,7 +779,7 @@ int e1000e_pci_init(struct naut_info * naut) {
 
         /* old_cmd |= 0x7;  // make sure bus master is enabled */
         /* old_cmd &= ~0x40; */
-        uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN | E1000E_PCI_CMD_INT_DISABLE;
+        uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN; // | E1000E_PCI_CMD_INT_DISABLE;
         DEBUG("New PCI CMD: 0x%04x\n", pci_cmd);
         pci_cfg_writew(bus->num,pdev->num,0,E1000E_PCI_CMD_OFFSET, pci_cmd);
         DEBUG("init fn: pci_cmd 0x%04x expects  0x%04x\n",
@@ -813,14 +813,11 @@ int e1000e_pci_init(struct naut_info * naut) {
   DEBUG("device reset\n");
   WRITE_MEM(state->dev, E1000E_CTRL_OFFSET, E1000E_CTRL_RST);
   udelay(RESTART_DELAY); // delay about 10 ms approximately
-  // disable interrupts again
+  // disable interrupts again after reset
   WRITE_MEM(state->dev, E1000E_IMC_OFFSET, 0xffffffff);
 
-  // WRITE_MEM(state->dev, E1000E_RAL_OFFSET, 0x05050505);
-  uint32_t mac_low = READ_MEM(state->dev, E1000E_RAL_OFFSET);
   uint32_t mac_high = READ_MEM(state->dev, E1000E_RAH_OFFSET);
-  // WRITE_MEM(state->dev, E1000E_RAH_OFFSET, (mac_high & 0xffff0000) | 0x0404);
-  mac_high = READ_MEM(state->dev, E1000E_RAH_OFFSET);
+  uint32_t mac_low = READ_MEM(state->dev, E1000E_RAL_OFFSET);
   uint64_t mac_all = ((uint64_t)mac_low+((uint64_t)mac_high<<32)) & 0xffffffffffff;
   DEBUG("e1000e mac_all = 0x%lX\n", mac_all);
   DEBUG("e1000e mac_high = 0x%x mac_low = 0x%x\n", mac_high, mac_low);
@@ -857,9 +854,8 @@ int e1000e_pci_init(struct naut_info * naut) {
   WRITE_MEM(state->dev, E1000E_IMC_OFFSET, 0);
   DEBUG("init fn: IMC = 0x%08x expects 0x%08x\n",
         READ_MEM(state->dev, E1000E_IMC_OFFSET), 0);
-  /* for(uint8_t i = 0; i < 55; i++) { */
-  /*   nk_unmask_irq(i); */
-  /* } */
+
+  // hacking by unmasking every pin of the second ioapic
   struct sys_info* sys = &(nk_get_nautilus_info()->sys);
   struct ioapic* ioapic;
 
@@ -869,56 +865,41 @@ int e1000e_pci_init(struct naut_info * naut) {
       ioapic_unmask_irq(ioapic,j);
     }
   }
-  /* struct pci_dev* pdev = pci_find_device(state->bus_num, state->dev_num, 0); */
-  /* if(pdev != NULL) { */
-  /*   if (pci_dev_enable_msi(pdev, 153, 1, 0)) { */
-  /*     // failed to enable... */
-  /*     panic("cannot enable the msi\n"); */
-  /*     return 0; */
-  /*   } */
+  
+  struct pci_dev* pdev = pci_find_device(state->bus_num, state->dev_num, 0);
+  if(pdev != NULL) {
+    if (pci_dev_enable_msi(pdev, 153, 1, 0)) {
+      // failed to enable...
+      panic("cannot enable the msi\n");
+      return 0;
+    }
     
-  /*   if (register_int_handler(153, e1000e_irq_handler, NULL)) { */
-  /*     // failed.... */
-  /*     panic("cannot register handler\n"); */
-  /*     return 0; */
-  /*   } */
-  /*   if (pci_dev_unmask_msi(pdev, 153)) { */
-  /*     panic("cannot unmask msi\n"); */
-  /*     return 0; */
-  /*   } */
-  /* } else { */
-  /*   panic("pci_find_device returns null\n"); */
-  /*   return 0; */
-  /* } */
-  // register the interrupt handler
-  // register_irq_handler(IRQ_NUMBER, e1000e_irq_handler, NULL);
-  /* nk_unmask_irq(11); */
-  /* for(int i = 12; i < 256; i++) { */
-  /*   DEBUG("init fn: unmask irq %d\n", i); */
-  /*   nk_unmask_irq(i); */
-  /* } */
-  // nk_unmask_irq(IRQ_NUMBER);
+    if (register_int_handler(153, e1000e_irq_handler, NULL)) {
+      // failed....
+      panic("cannot register handler\n");
+      return 0;
+    }
+    if (pci_dev_unmask_msi(pdev, 153)) {
+      panic("cannot unmask msi\n");
+      return 0;
+    }
+  } else {
+    panic("pci_find_device returns null\n");
+    return 0;
+  }
+
   // interrupt delay value = 0 -> does not delay
   WRITE_MEM(state->dev, E1000E_TIDV_OFFSET, 0);
   // receive interrupt delay timer = 0
   // -> interrupt when the device receives a package
   WRITE_MEM(state->dev, E1000E_RDTR_OFFSET, 0);
-  // enable only transmit descriptor written back and receive interrupt timer
 
-  // WRITE_MEM(state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
+  // enable only transmit descriptor written back and receive interrupt timer
+  WRITE_MEM(state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
+
   // after the interrupt is turned on, the interrupt handler is called
   // due to the transmit descriptor queue empty.
 
-  /* WRITE_MEM(state->dev, E1000E_ICS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0); */
-  /* DEBUG("init fn: ICS 0x08x expect 0x08x", */
-  /*       READ_MEM(state->dev, E1000E_ICS_OFFSET), */
-  /*       E1000E_ICR_TXDW | E1000E_ICR_RXT0); */
-  /* uint32_t status_pci = pci_cfg_readw(state->bus_num, state->dev_num, */
-  /*                                     0, E1000E_PCI_STATUS_OFFSET); */
-  /* DEBUG("init fn: status_pci 0x%04x int %d\n", */
-  /*       status_pci, status_pci & E1000E_PCI_STATUS_INT);  */
-
-  WRITE_MEM(state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
   uint32_t icr_reg = READ_MEM(state->dev, E1000E_ICR_OFFSET);
   DEBUG("init fn: IMS = 0x%08x\n",
         READ_MEM(state->dev, E1000E_IMS_OFFSET), icr_reg);
@@ -927,7 +908,10 @@ int e1000e_pci_init(struct naut_info * naut) {
         E1000E_ICR_TXQE & icr_reg,
         E1000E_ICR_TXD_LOW & icr_reg,
         E1000E_ICR_TXDW & icr_reg);
+
+  e1000e_trigger_int();
   DEBUG("init fn: end init fn --------------------\n");
+  
   return 0;
 }
 

@@ -77,7 +77,7 @@
 #define E1000E_TDBAH_OFFSET   0x3804   // transmit descriptor base address high check
 #define E1000E_TDLEN_OFFSET   0x3808   // transmit descriptor list length check
 #define E1000E_TDH_OFFSET     0x3810   // transmit descriptor head check
-#define E1000E_TDT_OFFSET     0x3818   // transmit descript828or tail check
+#define E1000E_TDT_OFFSET     0x3818   // transmit descriptor tail check
 #define E1000E_TCTL_OFFSET    0x0400   // transmit control check check
 #define E1000E_TIPG_OFFSET    0x0410   // transmit interpacket gap check
 #define E1000E_TXDCTL_OFFSET  0x03828  // transmit descriptor control r/w check

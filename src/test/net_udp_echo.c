@@ -35,7 +35,7 @@
 #include <dev/pci.h>
 #include <nautilus/vc.h>                      // nk_vc_printf
 
-#define DEBUG_ECHO 1
+// #define DEBUG_ECHO 1
 
 #ifndef DEBUG_ECHO
 #undef DEBUG_PRINT

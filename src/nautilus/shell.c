@@ -39,6 +39,7 @@
 #include <test/threads.h>
 #include <test/groups.h>
 #include <test/net_udp_echo.h>
+#include <dev/e1000e_pci.h>
 
 #ifdef NAUT_CONFIG_PALACIOS
 #include <nautilus/vmm.h>
@@ -631,6 +632,7 @@ static int handle_test(char *buf)
   char nic[80];
   char ip[80];
   uint32_t port, num;
+  
     
   if (sscanf(buf,"test udp_echo %s %s %u %u",nic,ip,&port,&num)==4) { 
     nk_vc_printf("Testing udp echo server\n");
@@ -1050,6 +1052,7 @@ static int handle_cmd(char *buf, int n)
     nk_vc_printf("run path\n");
     return 0;
   }
+  
   if (!strncasecmp(buf,"ei",2)) {
     void e1000e_trigger_int();
     nk_vc_printf("Triggering E1000E interrupt\n");
@@ -1057,8 +1060,25 @@ static int handle_cmd(char *buf, int n)
     return 0;
   }
 
+  if(!strncasecmp(buf,"read int", 8)) {
+    // void e1000e_interpret_int_shell();
+    nk_vc_printf("Reading ICR register of e1000e\n");
+    e1000e_interpret_int_shell();
+    return 0;
+  }
 
+  if(!strncasecmp(buf,"read stat", 8)) {
+    void e1000e_read_stat_shell();
+    nk_vc_printf("Reading stat registers of e1000e\n");
+    e1000e_read_stat_shell();
+    return 0;
+  }
 
+  if(!strncasecmp(buf,"echo", 4)) {
+    memset(buf, 0, MAX_CMD);
+    sprintf(buf, "test udp_echo e1000e-0 165.124.183.167 5000 10");
+  }  
+  
 #ifdef NAUT_CONFIG_PROFILE
   if (!strncasecmp(buf,"inst",4)) {
     handle_instrument(buf);

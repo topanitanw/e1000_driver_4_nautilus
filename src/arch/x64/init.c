@@ -467,10 +467,6 @@ init (unsigned long mbd,
     /* e1000e_msi_on(); */
     /* e1000e_trigger_int(); */
     /* e1000e_trigger_int_num(0xffff); */
-    /* printk("test udp echo\n"); */
-    test_net_udp_echo("e1000e-0", "165.124.183.167", 5000, 11);
-    /* printk("test sending arp request\n"); */
-    /* test_net_arp_request(); */
     printk("Nautilus boot thread yielding (indefinitely)\n");
 
     /* we don't come back from this */

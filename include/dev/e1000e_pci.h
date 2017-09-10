@@ -36,7 +36,7 @@
 #define TX_BLOCKSIZE          256      // bytes available per DMA block
 #define RX_DSC_COUNT          16       // equal to DMA block count
 #define RX_BLOCKSIZE          256      // bytes available per DMA block
-#define RESTART_DELAY         10000    // usec = 10 ms
+#define RESTART_DELAY         5        // usec = 5 us 
 
 // After this line, PLEASE DO NOT CHANGE ANYTHING.
 // transmission unit
@@ -85,21 +85,37 @@
 // receive
 #define E1000E_RAL_OFFSET     0x5400   // receive address low check
 #define E1000E_RAH_OFFSET     0x5404   // receive address high check
-
-#define E1000E_RDBAL_OFFSET   0x2800   // receive descriptor base address low check
-#define E1000E_RDBAH_OFFSET   0x2804   // receive descriptor base address high check
+#define E1000E_RDBAL_OFFSET   0x2800   // rx descriptor base address low check
+#define E1000E_RDBAH_OFFSET   0x2804   // rx descriptor base address high check
 #define E1000E_RDLEN_OFFSET   0x2808   // receive descriptor list length check
 #define E1000E_RDH_OFFSET     0x2810   // receive descriptor head check
 #define E1000E_RDT_OFFSET     0x2818   // receive descriptor tail check
 #define E1000E_RCTL_OFFSET    0x0100   // receive control check
-#define E1000E_RDTR_OFFSET    0x2820   // receive delay timer check
-#define E1000E_RSRPD_OFFSET   0x02C00  // receive small packet detect interrupt r/w
+#define E1000E_RDTR_OFFSET_NEW 0x2820
+#define E1000E_RDTR_OFFSET_ALIAS 0x0108 // receive delay timer check
+#define E1000E_RSRPD_OFFSET   0x02C00  // rx small packet detect interrupt r/w
 #define E1000E_RXDCTL_OFFSET  0x2828   // receive descriptor control
-// error
+#define E1000E_RADV_OFFSET    0x282C   // receive interrupt absolute delay timer
+
+// statistics error
+#define E1000E_CRCERRS_OFFSET 0x04000  // crc error count
+//// missed pkt count (insufficient receive fifo space)
+#define E1000E_MPC_OFFSET     0x04010
+
 #define E1000E_TPT_OFFSET     0x40D4   // total package transmit
 #define E1000E_TPR_OFFSET     0x40D0   // total package receive
-#define E1000E_COLC_OFFSET    0x04028  // collision count
+#define E1000E_TORL_OFFSET    0x040C0  // total octet receive low
+#define E1000E_TORH_OFFSET    0x040C8  // total octet receive high
+#define E1000E_TOTL_OFFSET    0x040C8  // total octet transmit low 
+#define E1000E_TOTH_OFFSET    0x040CC  // total octet transmit high
+
 #define E1000E_RXERRC_OFFSET  0x0400C  // rx error count
+#define E1000E_RNBC_OFFSET    0x040A0  // receive no buffer count
+#define E1000E_GPRC_OFFSET    0x04074  // good packets receive count
+#define E1000E_GPTC_OFFSET    0x04080  // good packets transmit count
+#define E1000E_COLC_OFFSET    0x04028  // collision count
+#define E1000E_RUC_OFFSET     0x040A4  // receive under size count
+#define E1000E_ROC_OFFSET     0x040AC  // receive over size count
 
 // 4 interrupt register offset
 #define E1000E_ICR_OFFSET     0x000C0  /* interrupt cause read register check*/
@@ -126,10 +142,12 @@
 // Status
 #define E1000E_STATUS_FD             1           // full, half duplex = 1, 0
 #define E1000E_STATUS_LU             (1<<1)      // link up established = 1
-#define E1000E_STATUS_SPEED_10M      (0<<8)
-#define E1000E_STATUS_SPEED_100M     (1<<8)
-#define E1000E_STATUS_SPEED_1G       (2<<8)
-#define E1000E_STATUS_SPEED_MASK     (3<<8)
+#define E1000E_STATUS_SPEED_10M      (0<<6)
+#define E1000E_STATUS_SPEED_100M     (1<<6)
+#define E1000E_STATUS_SPEED_1G       (2<<6)
+#define E1000E_STATUS_SPEED_MASK     (3<<6)
+#define E1000E_STATUS_ASDV_MASK      (3<<8)      // auto speed detect value
+#define E1000E_STATUS_PHYRA          (1<<10)     // PHY required initialization
 
 // E1000E Transmit Control Register
 #define E1000E_TCTL_EN               (1 << 1)    // transmit enable
@@ -176,13 +194,6 @@
 #define E1000E_RCTL_PMCF             (1 << 23)   // Pass MAC Control Frames
 #define E1000E_RCTL_SECRC            (1 << 26)   // Strip Ethernet CRC
 
-// RXDCTL
-#define E1000E_RXDCTL_GRAN           (1 << 24)   // Granularity
-#define E1000E_RXDCTL_WTHRESH        (1 << 16)   // number of written-back rxd
-#define E1000E_RXDCTL_PTHRESH        (1 << 0)    // number of prefetching rxd
-#define E1000E_RXDCTL_HTHRESH        (1<<8)      // number of available host rxd
-
-
 // Buffer Sizes
 // RCTL.BSEX = 0
 #define E1000E_RCTL_BSIZE_256        (3 << 16)
@@ -194,6 +205,12 @@
 #define E1000E_RCTL_BSIZE_8192       ((2 << 16) | (1 << 25))
 #define E1000E_RCTL_BSIZE_16384      ((1 << 16) | (1 << 25))
 #define E1000E_RCTL_BSIZE_MASK       ~((3 << 16) | (1 << 25))
+
+// RXDCTL
+#define E1000E_RXDCTL_GRAN           (1 << 24)   // Granularity
+#define E1000E_RXDCTL_WTHRESH        (0 << 16)   // number of written-back rxd
+#define E1000E_RXDCTL_PTHRESH        (1 << 0)    // number of prefetching rxd
+#define E1000E_RXDCTL_HTHRESH        (1 << 8)    // number of available host rxd
 
 #define E1000E_RECV_BSIZE_256        256
 #define E1000E_RECV_BSIZE_512        512
@@ -207,12 +224,15 @@
 // interrupt bits of icr register
 #define E1000E_ICR_TXDW              1          // transmit descriptor written back 
 #define E1000E_ICR_TXQE              (1 << 1)   // transmit queue empty 
-#define E1000E_ICR_TXD_LOW           (1 << 15)  // transmit descriptor low threshold hit 
-
-#define E1000E_ICR_SRPD              (1 << 16)  // small receive packet detected 
-#define E1000E_ICR_RXT0              (1 << 7)   // receiver timer interrupt 
-#define E1000E_ICR_RXO               (1 << 6)   // receive overrun 
 #define E1000E_ICR_LSC               (1 << 2)   // link state change 
+#define E1000E_ICR_RXO               (1 << 6)   // receive overrun 
+#define E1000E_ICR_RXT0              (1 << 7)   // receiver timer interrupt 
+#define E1000E_ICR_TXD_LOW           (1 << 15)  // transmit descriptor low threshold hit 
+#define E1000E_ICR_SRPD              (1 << 16)  // small receive packet detected 
+#define E1000E_ICR_OTHER             (1 << 24)  // other interrupts
+#define E1000E_ICR_INT_ASSERTED      (1 << 31)  // interrupt asserted
+
+#define E1000E_RDTR_FPD              (1 << 31)  // flush partial descriptor block
 
 // new type declaration
 struct e1000e_dev {
@@ -333,4 +353,6 @@ void e1000e_msi_on();
 int e1000e_pci_init(struct naut_info * naut);
 int e1000e_pci_deinit();
 void e1000e_send();
+void e1000e_interpret_int_shell();
+void e1000e_read_stat_shell();
 #endif

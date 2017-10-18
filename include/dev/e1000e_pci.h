@@ -130,9 +130,10 @@
 #define E1000E_CTRL_FD               1           // full deplex
 #define E1000E_CTRL_SLU              (1<<6)      // set link up
 #define E1000E_CTRL_ILOS             (1<<7)      // loss of signal polarity
-#define E1000E_CTRL_SPEED_10M        (0<<8)      // speed selection
-#define E1000E_CTRL_SPEED_100M       (1<<8)
-#define E1000E_CTRL_SPEED_1G         (2<<8)
+#define E1000E_CTRL_SPEED_10M        (0<<8)      // speed selection 10M
+#define E1000E_CTRL_SPEED_100M       (1<<8)      // speed selection 100M
+#define E1000E_CTRL_SPEED_1GV1       (2<<8)      // speed selection 1g v1
+#define E1000E_CTRL_SPEED_1GV2       (3<<8)      // speed selection 1g v2
 #define E1000E_CTRL_FRCSPD           (1<<11)     // force speed
 #define E1000E_CTRL_FRCDPLX          (1<<12)     // force duplex
 #define E1000E_CTRL_RST              (1<<26)     // reset
@@ -208,7 +209,7 @@
 
 // RXDCTL
 #define E1000E_RXDCTL_GRAN           (1 << 24)   // Granularity
-#define E1000E_RXDCTL_WTHRESH        (0 << 16)   // number of written-back rxd
+#define E1000E_RXDCTL_WTHRESH        (1 << 16)   // number of written-back rxd
 #define E1000E_RXDCTL_PTHRESH        (1 << 0)    // number of prefetching rxd
 #define E1000E_RXDCTL_HTHRESH        (1 << 8)    // number of available host rxd
 
@@ -305,6 +306,7 @@ struct e1000e_tx_desc {
   uint16_t special;
 } __attribute__((packed)); 
 
+// TODO change the type of context to void
 struct e1000e_fn_map {
   void (*callback)(nk_net_dev_status_t, void *);
   uint64_t *context;
@@ -349,10 +351,16 @@ void e1000e_trigger_int();
 void e1000e_trigger_int_num(uint32_t int_num);
 void e1000e_legacy_int_off();
 void e1000e_legacy_int_on();
-void e1000e_msi_on();
 int e1000e_pci_init(struct naut_info * naut);
 int e1000e_pci_deinit();
 void e1000e_send();
 void e1000e_interpret_int_shell();
+void e1000e_interpret_int(uint32_t);
+void e1000e_interpret_ims(struct e1000e_state*);
+void e1000e_interpret_icr(struct e1000e_state*);
 void e1000e_read_stat_shell();
+void e1000e_reset_all_int();
+void e1000e_reset_rxo();
+void e1000e_interpret_rxd(struct e1000e_state*);
+void e1000e_interpret_rxd_shell();
 #endif

@@ -110,12 +110,20 @@ static void generic_send_callback(nk_net_dev_status_t status, void *context)
 static void generic_receive_callback(nk_net_dev_status_t status, void *context)
 {
   struct op *o = (struct op*) context;
-  DEBUG("generic receive callback (status = 0x%lx) for %p\n", status, context);
+  DEBUG("generic receive callback (status = 0x%lx) for 0x%p\n", status, context);
   o->status = status;
   o->completed = 1;
+  DEBUG("before signal o->status %d = status %d, o->c %d = 1\n",
+        o->status, status, o->completed);  
   nk_dev_signal((struct nk_dev *)o->dev);
+  DEBUG("after signal o->status %d = status %d, o->c %d = 1\n",
+        o->status, status, o->completed);
 }
 
+static int generic_cond_check(void* state) {
+  struct op *o = (struct op*) state;
+  return o->completed;
+}
 
 int nk_net_dev_send_packet(struct nk_net_dev *dev, 
                            uint8_t *src, 
@@ -157,13 +165,14 @@ int nk_net_dev_send_packet(struct nk_net_dev *dev,
             return 0;
           }
         } else {
+          DEBUG("netdev: context &o = 0x%p\n", &o);
           if (di->post_send(d->state,src,len,generic_send_callback,(void*)&o)) { 
             ERROR("Failed to launch send\n");
             return -1;
           } else {
             DEBUG("Packet launch started, waiting for completion\n");
             while (!o.completed) {
-              nk_dev_wait((struct nk_dev *)dev);
+              nk_dev_wait_extended((struct nk_dev *)dev, generic_cond_check, (void*)&o);
             }
             DEBUG("Packet launch completed\n");
             return o.status;
@@ -219,15 +228,16 @@ int nk_net_dev_receive_packet(struct nk_net_dev *dev,
             return 0;
           }
         } else {
+          DEBUG("netdev: context &o = 0x%p\n", &o);          
           if (di->post_receive(d->state,dest,len,generic_receive_callback,(void*)&o)) { 
             ERROR("Failed to post receive\n");
             return -1;
           } else {
             DEBUG("Packet receive posted, waiting for completion\n");
             while (!o.completed) {
-              DEBUG("Calling nk_dev_wait\n");
-              nk_dev_wait((struct nk_dev *)d);
-              DEBUG("Out of nk_dev_wait\n");              
+              DEBUG("Calling nk_dev_wait_extended\n");
+              nk_dev_wait_extended((struct nk_dev *)d, generic_cond_check, (void*)&o);
+              DEBUG("Out of nk_dev_wait_extended\n");              
             }
             DEBUG("Packet receive completed\n");
             return o.status;

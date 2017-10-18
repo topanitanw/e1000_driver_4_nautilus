@@ -61,6 +61,8 @@ struct nk_dev {
     struct nk_dev_int *interface;
     
     nk_thread_queue_t *waiting_threads;
+
+  int condition; // wakeup condition if none is given.
 };
 
 // Not all request types apply to all device types
@@ -77,8 +79,8 @@ int            nk_dev_unregister(struct nk_dev *);
 struct nk_dev *nk_dev_find(char *name);
 
 void nk_dev_wait(struct nk_dev *);
+void nk_dev_wait_extended(struct nk_dev*, int (*cond_check)(void *state), void *);
 void nk_dev_signal(struct nk_dev *);
-
 void nk_dev_dump_devices();
 
 

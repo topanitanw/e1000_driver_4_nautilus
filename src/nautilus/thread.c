@@ -65,15 +65,15 @@ static struct nk_tls tls_keys[TLS_MAX_KEYS];
 nk_thread_queue_t*
 nk_thread_queue_create (void) 
 {
-    nk_thread_queue_t * q = NULL;
+  nk_thread_queue_t * q = NULL;
 
-    q = nk_queue_create();
+  q = nk_queue_create();
 
-    if (!q) {
-        THREAD_ERROR("Could not allocate thread queue\n");
-        return NULL;
-    }
-    return q;
+  if (!q) {
+    THREAD_ERROR("Could not allocate thread queue\n");
+    return NULL;
+  }
+  return q;
 }
 
 
@@ -85,9 +85,9 @@ nk_thread_queue_create (void)
 void 
 nk_thread_queue_destroy (nk_thread_queue_t * q)
 {
-    // free any remaining entries
-    THREAD_DEBUG("Destroying thread queue\n");
-    nk_queue_destroy(q, 1);
+  // free any remaining entries
+  THREAD_DEBUG("Destroying thread queue\n");
+  nk_queue_destroy(q, 1);
 }
 
 
@@ -102,30 +102,30 @@ nk_thread_queue_destroy (nk_thread_queue_t * q)
 static int
 thread_detach (nk_thread_t * t)
 {
-    preempt_disable();
+  preempt_disable();
 
-    ASSERT(t->refcount > 0);
+  ASSERT(t->refcount > 0);
 
-    /* remove me from my parent's child list */
-    list_del(&(t->child_node));
+  /* remove me from my parent's child list */
+  list_del(&(t->child_node));
 
-    --t->refcount;
+  --t->refcount;
 
-    // conditional reaping is done by the scheduler when threads are created
-    // this makes the join+exit path much faster in the common case and 
-    // bulks reaping events together
-    // the user can also explictly reap when needed
-    // plus the autoreaper thread can be enabled 
-    // the following code can be enabled if you want to reap immediately once
-    // a thread's refcount drops to zero
-    // 
-    //if (t->refcount==0) { 
-    //   nk_thread_destroy(t);
-    //}
+  // conditional reaping is done by the scheduler when threads are created
+  // this makes the join+exit path much faster in the common case and 
+  // bulks reaping events together
+  // the user can also explictly reap when needed
+  // plus the autoreaper thread can be enabled 
+  // the following code can be enabled if you want to reap immediately once
+  // a thread's refcount drops to zero
+  // 
+  //if (t->refcount==0) { 
+  //   nk_thread_destroy(t);
+  //}
 
-    preempt_enable();
+  preempt_enable();
 
-    return 0;
+  return 0;
 }
 
 
@@ -134,24 +134,24 @@ thread_detach (nk_thread_t * t)
 static void 
 tls_exit (void) 
 {
-    nk_thread_t * t = get_cur_thread();
-    unsigned i, j;
-    uint8_t called = 0;
+  nk_thread_t * t = get_cur_thread();
+  unsigned i, j;
+  uint8_t called = 0;
 
-    for (i = 0; i < MIN_DESTRUCT_ITER; i++) {
-        for (j = 0 ; j < TLS_MAX_KEYS; j++) {
-            void * val = (void*)t->tls[j]; 
-            if (val && tls_keys[j].destructor) {
-                called = 1;
-                t->tls[j] = NULL;
-                tls_keys[j].destructor(val);
-            }
+  for (i = 0; i < MIN_DESTRUCT_ITER; i++) {
+    for (j = 0 ; j < TLS_MAX_KEYS; j++) {
+      void * val = (void*)t->tls[j]; 
+      if (val && tls_keys[j].destructor) {
+        called = 1;
+        t->tls[j] = NULL;
+        tls_keys[j].destructor(val);
+      }
 
-            if (!called) {
-                break;
-            }
-        }
+      if (!called) {
+        break;
+      }
     }
+  }
 }
 
 
@@ -159,67 +159,67 @@ tls_exit (void)
 
 int
 _nk_thread_init (nk_thread_t * t, 
-		 void * stack, 
-		 uint8_t is_detached, 
-		 int bound_cpu, 
-		 nk_thread_t * parent)
+                 void * stack, 
+                 uint8_t is_detached, 
+                 int bound_cpu, 
+                 nk_thread_t * parent)
 {
-    struct sys_info * sys = per_cpu_get(system);
+  struct sys_info * sys = per_cpu_get(system);
 
-    if (!t) {
-        THREAD_ERROR("Given NULL thread pointer...\n");
-        return -EINVAL;
-    }
+  if (!t) {
+    THREAD_ERROR("Given NULL thread pointer...\n");
+    return -EINVAL;
+  }
 
-    if (bound_cpu>=0 && bound_cpu>=sys->num_cpus) {
-	THREAD_ERROR("Impossible CPU binding %d\n",bound_cpu);
-	return -EINVAL;
-    }
+  if (bound_cpu>=0 && bound_cpu>=sys->num_cpus) {
+    THREAD_ERROR("Impossible CPU binding %d\n",bound_cpu);
+    return -EINVAL;
+  }
 
 
-    t->stack      = stack;
-    t->rsp        = (uint64_t)stack + t->stack_size - sizeof(uint64_t);
-    t->tid        = atomic_inc(next_tid) + 1;
-    t->refcount   = is_detached ? 1 : 2; // thread references itself as well
-    t->parent     = parent;
-    t->bound_cpu  = bound_cpu;
-    t->fpu_state_offset = offsetof(struct nk_thread, fpu_state);
+  t->stack      = stack;
+  t->rsp        = (uint64_t)stack + t->stack_size - sizeof(uint64_t);
+  t->tid        = atomic_inc(next_tid) + 1;
+  t->refcount   = is_detached ? 1 : 2; // thread references itself as well
+  t->parent     = parent;
+  t->bound_cpu  = bound_cpu;
+  t->fpu_state_offset = offsetof(struct nk_thread, fpu_state);
 
-    INIT_LIST_HEAD(&(t->children));
+  INIT_LIST_HEAD(&(t->children));
 
-    /* I go on my parent's child list */
-    if (parent) {
-        list_add_tail(&(t->child_node), &(parent->children));
-    }
+  /* I go on my parent's child list */
+  if (parent) {
+    list_add_tail(&(t->child_node), &(parent->children));
+  }
 
-    if (!(t->sched_state = nk_sched_thread_state_init(t,0))) { 
-	THREAD_ERROR("Could not create scheduler state for thread\n");
-	return -EINVAL;
-    }
+  if (!(t->sched_state = nk_sched_thread_state_init(t,0))) { 
+    THREAD_ERROR("Could not create scheduler state for thread\n");
+    return -EINVAL;
+  }
 
 #ifdef NAUT_CONFIG_ENABLE_BDWGC
-    if (!(t->gc_state = nk_gc_bdwgc_thread_state_init(t))) {
-	THREAD_ERROR("Failed to initialize GC state for thread\n");
-	return -1;
-    }
+  if (!(t->gc_state = nk_gc_bdwgc_thread_state_init(t))) {
+    THREAD_ERROR("Failed to initialize GC state for thread\n");
+    return -1;
+  }
 #endif
 
-    t->waitq = nk_thread_queue_create();
+  t->waitq = nk_thread_queue_create();
 
-    if (!t->waitq) {
-        THREAD_ERROR("Could not create thread's wait queue\n");
-        return -EINVAL;
-    }
+  if (!t->waitq) {
+    THREAD_ERROR("Could not create thread's wait queue\n");
+    return -EINVAL;
+  }
 
-    return 0;
+  return 0;
 }
 
 
 static void
 thread_cleanup (void)
 {
-    THREAD_DEBUG("Thread (%d) exiting on core %d\n", get_cur_thread()->tid, my_cpu_id());
-    nk_thread_exit(0);
+  THREAD_DEBUG("Thread (%d) exiting on core %d\n", get_cur_thread()->tid, my_cpu_id());
+  nk_thread_exit(0);
 }
 
 
@@ -230,8 +230,8 @@ thread_cleanup (void)
 static inline void
 thread_push (nk_thread_t * t, uint64_t x)
 {
-    t->rsp -= 8;
-    *(uint64_t*)(t->rsp) = x;
+  t->rsp -= 8;
+  *(uint64_t*)(t->rsp) = x;
 }
 
 
@@ -246,40 +246,40 @@ thread_setup_init_stack (nk_thread_t * t, nk_thread_fun_t fun, void * arg)
 #define STACK_SAVE_SIZE    64
 #define THREAD_SETUP_SIZE  (STACK_SAVE_SIZE + GPR_SAVE_SIZE)
 
-    /*
-     * if this is a thread fork, this part is taken care of
-     * in _thread_fork(). There is no function!
-     */
-    if (fun) {
-        thread_push(t, (uint64_t)&thread_cleanup);
-        thread_push(t, (uint64_t)fun);
-    }
+  /*
+   * if this is a thread fork, this part is taken care of
+   * in _thread_fork(). There is no function!
+   */
+  if (fun) {
+    thread_push(t, (uint64_t)&thread_cleanup);
+    thread_push(t, (uint64_t)fun);
+  }
 
-    thread_push(t, (uint64_t)KERNEL_SS);                 // SS
-    thread_push(t, (uint64_t)(t->rsp+RSP_STACK_OFFSET)); // rsp
-    thread_push(t, (uint64_t)0UL);                       // rflags
-    thread_push(t, (uint64_t)KERNEL_CS);
-    thread_push(t, (uint64_t)&nk_thread_entry);
-    thread_push(t, 0);                                   // dummy error code
-    thread_push(t, 0);                                   // intr no
+  thread_push(t, (uint64_t)KERNEL_SS);                 // SS
+  thread_push(t, (uint64_t)(t->rsp+RSP_STACK_OFFSET)); // rsp
+  thread_push(t, (uint64_t)0UL);                       // rflags
+  thread_push(t, (uint64_t)KERNEL_CS);
+  thread_push(t, (uint64_t)&nk_thread_entry);
+  thread_push(t, 0);                                   // dummy error code
+  thread_push(t, 0);                                   // intr no
 
-    /*
-     * if we have a function, it needs an input argument 
-     * so we overwrite its RDI
-     */  
-    if (fun) {
-        *(uint64_t*)(t->rsp-GPR_RDI_OFFSET) = (uint64_t)arg; 
-    }
+  /*
+   * if we have a function, it needs an input argument 
+   * so we overwrite its RDI
+   */  
+  if (fun) {
+    *(uint64_t*)(t->rsp-GPR_RDI_OFFSET) = (uint64_t)arg; 
+  }
 
-    /* 
-     * if this is a thread fork, we return 0 to the child
-     * via RAX - note that _fork_return will not restore RAX
-     */
-    if (!fun) {
-        *(uint64_t*)(t->rsp-GPR_RAX_OFFSET) = 0;
-    }
+  /* 
+   * if this is a thread fork, we return 0 to the child
+   * via RAX - note that _fork_return will not restore RAX
+   */
+  if (!fun) {
+    *(uint64_t*)(t->rsp-GPR_RAX_OFFSET) = 0;
+  }
 
-    t->rsp -= GPR_SAVE_SIZE;                             // account for the GPRS;
+  t->rsp -= GPR_SAVE_SIZE;                             // account for the GPRS;
 }
 
 
@@ -317,61 +317,61 @@ nk_thread_create (nk_thread_fun_t fun,
                   nk_thread_id_t * tid,
                   int bound_cpu)
 {
-    struct sys_info * sys = per_cpu_get(system);
-    nk_thread_t * t = NULL;
-    int current_cpu = -1;
+  struct sys_info * sys = per_cpu_get(system);
+  nk_thread_t * t = NULL;
+  int current_cpu = -1;
 
-    t = malloc(sizeof(nk_thread_t));
+  t = malloc(sizeof(nk_thread_t));
 
-    if (!t) {
-        THREAD_ERROR("Could not allocate thread struct\n");
-        return -EINVAL;
-    }
+  if (!t) {
+    THREAD_ERROR("Could not allocate thread struct\n");
+    return -EINVAL;
+  }
 
-    memset(t, 0, sizeof(nk_thread_t));
+  memset(t, 0, sizeof(nk_thread_t));
 
-    if (stack_size) {
-        t->stack      = (void*)malloc(stack_size);
-        t->stack_size = stack_size;
-    } else {
-        t->stack      = (void*)malloc(PAGE_SIZE);
-        t->stack_size =  PAGE_SIZE;
-    }
+  if (stack_size) {
+    t->stack      = (void*)malloc(stack_size);
+    t->stack_size = stack_size;
+  } else {
+    t->stack      = (void*)malloc(PAGE_SIZE);
+    t->stack_size =  PAGE_SIZE;
+  }
 
-    if (!t->stack) { 
-	THREAD_ERROR("Failed to allocate a stack\n");
-	free(t);
-	return -EINVAL;
-    }
-
-    if (_nk_thread_init(t, t->stack, is_detached, bound_cpu, get_cur_thread()) < 0) {
-        THREAD_ERROR("Could not initialize thread\n");
-        goto out_err;
-    }
-
-    t->status = NK_THR_INIT;
-    
-    t->fun = fun;
-    t->input = input;
-    t->output = output;
-    
-    if (nk_sched_thread_post_create(t)) {
-	THREAD_ERROR("Scheduler does not accept thread creation\n");
-	goto out_err;
-    }
-
-    if (tid) {
-        *tid = (nk_thread_id_t)t;
-    }
-
-    THREAD_DEBUG("Thread create creating new thread with t=%p, tid=%lu\n", t, t->tid);
-
-    return 0;
-
-out_err:
-    free(t->stack);
+  if (!t->stack) { 
+    THREAD_ERROR("Failed to allocate a stack\n");
     free(t);
     return -EINVAL;
+  }
+
+  if (_nk_thread_init(t, t->stack, is_detached, bound_cpu, get_cur_thread()) < 0) {
+    THREAD_ERROR("Could not initialize thread\n");
+    goto out_err;
+  }
+
+  t->status = NK_THR_INIT;
+    
+  t->fun = fun;
+  t->input = input;
+  t->output = output;
+    
+  if (nk_sched_thread_post_create(t)) {
+    THREAD_ERROR("Scheduler does not accept thread creation\n");
+    goto out_err;
+  }
+
+  if (tid) {
+    *tid = (nk_thread_id_t)t;
+  }
+
+  THREAD_DEBUG("Thread create creating new thread with t=%p, tid=%lu\n", t, t->tid);
+
+  return 0;
+
+  out_err:
+  free(t->stack);
+  free(t);
+  return -EINVAL;
 }
 
 
@@ -402,24 +402,24 @@ nk_thread_start (nk_thread_fun_t fun,
                  nk_thread_id_t * tid,
                  int bound_cpu)
 {
-    nk_thread_id_t newtid   = NULL;
-    nk_thread_t * newthread = NULL;
+  nk_thread_id_t newtid   = NULL;
+  nk_thread_t * newthread = NULL;
 
 
-    THREAD_DEBUG("Start thread, caller %p\n", __builtin_return_address(0));
+  THREAD_DEBUG("Start thread, caller %p\n", __builtin_return_address(0));
 
-    if (nk_thread_create(fun, input, output, is_detached, stack_size, &newtid, bound_cpu) < 0) {
-        THREAD_ERROR("Could not create thread\n");
-        return -1;
-    }
+  if (nk_thread_create(fun, input, output, is_detached, stack_size, &newtid, bound_cpu) < 0) {
+    THREAD_ERROR("Could not create thread\n");
+    return -1;
+  }
 
-    newthread = (nk_thread_t*)newtid;
+  newthread = (nk_thread_t*)newtid;
 
-    if (tid) {
-        *tid = newtid;
-    }
+  if (tid) {
+    *tid = newtid;
+  }
 
-    return nk_thread_run(newthread);
+  return nk_thread_run(newthread);
 }
 
 int nk_thread_run(nk_thread_id_t t)
@@ -438,16 +438,16 @@ int nk_thread_run(nk_thread_id_t t)
   THREAD_DEBUG("Run thread initialized: %p (tid=%lu) stack=%p size=%lu rsp=%p\n",newthread,newthread->tid,newthread->stack,newthread->stack_size,newthread->rsp);
 
   if (nk_sched_make_runnable(newthread, newthread->current_cpu,1)) { 
-      THREAD_ERROR("Scheduler failed to run thread (%p, tid=%u) on cpu %u\n",
-		  newthread, newthread->tid, newthread->current_cpu);
-      return -1;
+    THREAD_ERROR("Scheduler failed to run thread (%p, tid=%u) on cpu %u\n",
+                 newthread, newthread->tid, newthread->current_cpu);
+    return -1;
   }
 
 #ifdef NAUT_CONFIG_DEBUG_THREADS
   if (newthread->bound_cpu == CPU_ANY) {
-      THREAD_DEBUG("Running thread (%p, tid=%u) on [ANY CPU] current_cpu=%d\n", newthread, newthread->tid,newthread->current_cpu); 
+    THREAD_DEBUG("Running thread (%p, tid=%u) on [ANY CPU] current_cpu=%d\n", newthread, newthread->tid,newthread->current_cpu); 
   } else {
-      THREAD_DEBUG("Running thread (%p, tid=%u) on bound cpu %u\n", newthread, newthread->tid, newthread->current_cpu); 
+    THREAD_DEBUG("Running thread (%p, tid=%u) on bound cpu %u\n", newthread, newthread->tid, newthread->current_cpu); 
   }
 #endif
 
@@ -474,64 +474,65 @@ int nk_thread_name(nk_thread_id_t tid, char *name)
 void 
 nk_wake_waiters (void)
 {
-    nk_thread_t * me  = get_cur_thread();
-    nk_thread_queue_wake_all(me->waitq);
+  nk_thread_t * me  = get_cur_thread();
+  nk_thread_queue_wake_all(me->waitq);
 }
 
 void nk_yield()
 {
-    struct nk_thread *me = get_cur_thread();
+  struct nk_thread *me = get_cur_thread();
 
-    spin_lock(&me->lock);
+  spin_lock(&me->lock);
 
-    nk_sched_yield(&me->lock);
+  nk_sched_yield(&me->lock);
 }
 
 
 // defined early to allow inlining - this is used in multiple places
-static void _thread_queue_wake_all (nk_thread_queue_t * q, int have_lock)
+static void
+_thread_queue_wake_all (nk_thread_queue_t * q, int have_lock)
 {
-    nk_queue_entry_t * elm = NULL;
-    nk_thread_t * t = NULL;
-    uint8_t flags=0;
+  nk_queue_entry_t * elm = NULL;
+  nk_thread_t * t = NULL;
+  uint8_t flags=0;
 
-    if (in_interrupt_context()) {
-	THREAD_DEBUG("[Interrupt Context] Thread %lu (%s) is waking all waiters on thread queue (q=%p)\n", get_cur_thread()->tid, get_cur_thread()->name, (void*)q);
-    } else {
-	THREAD_DEBUG("[Thread Context] Thread %lu (%s) is waking all waiters on thread queue (q=%p)\n", get_cur_thread()->tid, get_cur_thread()->name, (void*)q);
-    }
+  if (in_interrupt_context()) {
+    THREAD_DEBUG("[Interrupt Context] Thread %lu (%s) is waking all waiters on thread queue (q=%p)\n", get_cur_thread()->tid, get_cur_thread()->name, (void*)q);
+  } else {
+    THREAD_DEBUG("[Thread Context] Thread %lu (%s) is waking all waiters on thread queue (q=%p)\n", get_cur_thread()->tid, get_cur_thread()->name, (void*)q);
+  }
 
-    ASSERT(q);
+  ASSERT(q);
 
-    if (!have_lock) { 
-	flags = spin_lock_irq_save(&q->lock);
-    }
+  if (!have_lock) { 
+    flags = spin_lock_irq_save(&q->lock);
+  }
 
-    THREAD_DEBUG("Wakeup: have lock\n");
+  THREAD_DEBUG("Wakeup: have lock\n");
 
-    while ((elm = nk_dequeue_first(q))) {
-        t = container_of(elm, nk_thread_t, wait_node);
+  while ((elm = nk_dequeue_first(q))) {
+    t = container_of(elm, nk_thread_t, wait_node);
 
-	THREAD_DEBUG("Waking %lu (%s), status %lu\n", t->tid,t->name,t->status);
+    THREAD_DEBUG("Waking %lu (%s), status %lu\n", t->tid,t->name,t->status);
 
-        ASSERT(t);
-	ASSERT(t->status == NK_THR_WAITING);
+    ASSERT(t);
+    ASSERT(t->status == NK_THR_WAITING);
 
-	if (nk_sched_awaken(t, t->current_cpu)) { 
+    if (nk_sched_awaken(t, t->current_cpu)) { 
 	    THREAD_ERROR("Failed to awaken thread\n");
 	    goto out;
-	}
-
-	nk_sched_kick_cpu(t->current_cpu);
-	THREAD_DEBUG("Waking all waiters on thread queue (q=%p) woke thread %lu (%s)\n", (void*)q,t->tid,t->name);
-
     }
 
- out:
-    THREAD_DEBUG("Wakeup complete - releasing lock\n");
-    if (!have_lock) {
-	spin_unlock_irq_restore(&q->lock, flags);
-    }
+    nk_sched_kick_cpu(t->current_cpu);
+    THREAD_DEBUG("Waking all waiters on thread queue (q=%p) woke thread %lu (%s)\n", (void*)q,t->tid,t->name);
+
+  }
+
+  out:
+  THREAD_DEBUG("Wakeup complete - releasing lock\n");
+  if (!have_lock) {
+    spin_unlock_irq_restore(&q->lock, flags);
+  }
 }
 
 
@@ -549,56 +550,56 @@ static void _thread_queue_wake_all (nk_thread_queue_t * q, int have_lock)
  */
 void nk_thread_exit (void * retval) 
 {
-    nk_thread_t * me = get_cur_thread();
-    nk_thread_queue_t * wq = me->waitq;
-    uint8_t flags;
+  nk_thread_t * me = get_cur_thread();
+  nk_thread_queue_t * wq = me->waitq;
+  uint8_t flags;
 
-    THREAD_DEBUG("Thread %p (tid=%u (%s)) exiting, joining with children\n", me, me->tid, me->name);
+  THREAD_DEBUG("Thread %p (tid=%u (%s)) exiting, joining with children\n", me, me->tid, me->name);
 
-    /* wait for my children to finish */
-    nk_join_all_children(NULL);
+  /* wait for my children to finish */
+  nk_join_all_children(NULL);
 
-    THREAD_DEBUG("Children joined\n");
+  THREAD_DEBUG("Children joined\n");
 
-    /* clear any thread local storage that may have been allocated */
-    tls_exit();
+  /* clear any thread local storage that may have been allocated */
+  tls_exit();
 
-    THREAD_DEBUG("TLS exit complete\n");
+  THREAD_DEBUG("TLS exit complete\n");
 
-    // lock out anyone else looking at my wait queue
-    // we need to do this before we change our own state
-    // so we can avoid racing with someone who is attempting
-    // to join with us and is putting themselves on our wait queue
-    flags = spin_lock_irq_save(&wq->lock);
-    preempt_disable();
-    irq_enable_restore(flags);   // we only need interrupts off long enough to lock out the scheduler
+  // lock out anyone else looking at my wait queue
+  // we need to do this before we change our own state
+  // so we can avoid racing with someone who is attempting
+  // to join with us and is putting themselves on our wait queue
+  flags = spin_lock_irq_save(&wq->lock);
+  preempt_disable();
+  irq_enable_restore(flags);   // we only need interrupts off long enough to lock out the scheduler
 
-    THREAD_DEBUG("Lock acquired\n");
+  THREAD_DEBUG("Lock acquired\n");
 
-    // at this point, we have the lock on our wait queue and preemption is disabled
+  // at this point, we have the lock on our wait queue and preemption is disabled
 
-    me->output      = retval;
-    me->status      = NK_THR_EXITED;
+  me->output      = retval;
+  me->status      = NK_THR_EXITED;
 
-    // force arch and compiler to do above writes now
-    __asm__ __volatile__ ("mfence" : : : "memory"); 
+  // force arch and compiler to do above writes now
+  __asm__ __volatile__ ("mfence" : : : "memory"); 
 
-    THREAD_DEBUG("State update complete\n");
+  THREAD_DEBUG("State update complete\n");
 
-    /* wake up everyone who is waiting on me */
-    _thread_queue_wake_all(wq, 1);
+  /* wake up everyone who is waiting on me */
+  _thread_queue_wake_all(wq, 1);
 
-    THREAD_DEBUG("Waiting wakeup complete\n");
+  THREAD_DEBUG("Waiting wakeup complete\n");
 
-    me->refcount--;
+  me->refcount--;
 
-    THREAD_DEBUG("Thread %p (tid=%u (%s)) exit complete - invoking scheduler\n", me, me->tid, me->name);
+  THREAD_DEBUG("Thread %p (tid=%u (%s)) exit complete - invoking scheduler\n", me, me->tid, me->name);
 
-    // the scheduler will reenable preemption and release the lock
-    nk_sched_exit(&wq->lock);
+  // the scheduler will reenable preemption and release the lock
+  nk_sched_exit(&wq->lock);
 
-    /* we should never get here! */
-    panic("Should never get here!\n");
+  /* we should never get here! */
+  panic("Should never get here!\n");
 }
 
 
@@ -613,40 +614,40 @@ void nk_thread_exit (void * retval)
 void 
 nk_thread_destroy (nk_thread_id_t t)
 {
-    nk_thread_t * thethread = (nk_thread_t*)t;
+  nk_thread_t * thethread = (nk_thread_t*)t;
 
-    THREAD_DEBUG("Destroying thread (%p, tid=%lu)\n", (void*)thethread, thethread->tid);
+  THREAD_DEBUG("Destroying thread (%p, tid=%lu)\n", (void*)thethread, thethread->tid);
 
-    preempt_disable();
+  preempt_disable();
 
-    nk_sched_thread_pre_destroy(thethread);
+  nk_sched_thread_pre_destroy(thethread);
 
-    /* remove it from any wait queues */
-    nk_dequeue_entry(&(thethread->wait_node));
+  /* remove it from any wait queues */
+  nk_dequeue_entry(&(thethread->wait_node));
 
-    /* remove its own wait queue 
-     * (waiters should already have been notified */
-    nk_thread_queue_destroy(thethread->waitq);
+  /* remove its own wait queue 
+   * (waiters should already have been notified */
+  nk_thread_queue_destroy(thethread->waitq);
 
-    nk_sched_thread_state_deinit(thethread);
+  nk_sched_thread_state_deinit(thethread);
 
 #ifdef NAUT_CONFIG_ENABLE_BDWGC
-    nk_gc_bdwgc_thread_state_deinit(thethread);
+  nk_gc_bdwgc_thread_state_deinit(thethread);
 #endif
 
-    free(thethread->stack);
-    free(thethread);
+  free(thethread->stack);
+  free(thethread);
     
-    preempt_enable();
+  preempt_enable();
 }
 
 
 static int exit_check(void *state)
 {
-    volatile nk_thread_t *thethread = (nk_thread_t *)state;
+  volatile nk_thread_t *thethread = (nk_thread_t *)state;
     
-    THREAD_DEBUG("exit_check: thread (%lu %s) status is %u\n",thethread->tid,thethread->name,thethread->status);
-    return thethread->status==NK_THR_EXITED;
+  THREAD_DEBUG("exit_check: thread (%lu %s) status is %u\n",thethread->tid,thethread->name,thethread->status);
+  return thethread->status==NK_THR_EXITED;
 }
     
 
@@ -665,27 +666,27 @@ static int exit_check(void *state)
 int
 nk_join (nk_thread_id_t t, void ** retval)
 {
-    nk_thread_t *thethread = (nk_thread_t*)t;
+  nk_thread_t *thethread = (nk_thread_t*)t;
 
-    THREAD_DEBUG("Join initiated for thread %lu \"%s\"\n", thethread->tid, thethread->name);
+  THREAD_DEBUG("Join initiated for thread %lu \"%s\"\n", thethread->tid, thethread->name);
 
-    ASSERT(thethread->parent == get_cur_thread());
+  ASSERT(thethread->parent == get_cur_thread());
 
-    nk_thread_queue_sleep_extended(thethread->waitq, exit_check, thethread);
+  nk_thread_queue_sleep_extended(thethread->waitq, exit_check, thethread);
 
-    THREAD_DEBUG("Join commenced for thread %lu \"%s\"\n", thethread->tid, thethread->name);
+  THREAD_DEBUG("Join commenced for thread %lu \"%s\"\n", thethread->tid, thethread->name);
 
-    ASSERT(exit_check(thethread));
+  ASSERT(exit_check(thethread));
 
-    if (retval) {
-        *retval = thethread->output;
-    }
+  if (retval) {
+    *retval = thethread->output;
+  }
 
-    thread_detach(thethread);
+  thread_detach(thethread);
 
-    THREAD_DEBUG("Join completed for thread %lu \"%s\"\n", thethread->tid, thethread->name);
+  THREAD_DEBUG("Join completed for thread %lu \"%s\"\n", thethread->tid, thethread->name);
     
-    return 0;
+  return 0;
 }
     
 
@@ -708,31 +709,31 @@ nk_join (nk_thread_id_t t, void ** retval)
 int 
 nk_join_all_children (int (*func)(void * res)) 
 {
-    nk_thread_t * elm = NULL;
-    nk_thread_t * tmp = NULL;
-    nk_thread_t * me         = get_cur_thread();
-    void * res               = NULL;
-    int ret                  = 0;
+  nk_thread_t * elm = NULL;
+  nk_thread_t * tmp = NULL;
+  nk_thread_t * me         = get_cur_thread();
+  void * res               = NULL;
+  int ret                  = 0;
 
-    list_for_each_entry_safe(elm, tmp, &(me->children), child_node) {
+  list_for_each_entry_safe(elm, tmp, &(me->children), child_node) {
 
-        if (nk_join(elm, &res) < 0) {
-            THREAD_ERROR("Could not join child thread (t=%p)\n", elm);
-            ret = -1;
-            continue;
-        }
-
-        if (func) {
-            if (func(res) < 0) {
-                THREAD_ERROR("Consumer indicated error for child thread (t=%p, output=%p)\n", elm,res);
-                ret = -1;
-                continue;
-            }
-        }
-
+    if (nk_join(elm, &res) < 0) {
+      THREAD_ERROR("Could not join child thread (t=%p)\n", elm);
+      ret = -1;
+      continue;
     }
 
-    return ret;
+    if (func) {
+      if (func(res) < 0) {
+        THREAD_ERROR("Consumer indicated error for child thread (t=%p, output=%p)\n", elm,res);
+        ret = -1;
+        continue;
+      }
+    }
+
+  }
+
+  return ret;
 }
 
 
@@ -747,8 +748,8 @@ nk_join_all_children (int (*func)(void * res))
 void
 nk_set_thread_fork_output (void * result)
 {
-    nk_thread_t* t = get_cur_thread();
-    t->output = result;
+  nk_thread_t* t = get_cur_thread();
+  t->output = result;
 }
 
 
@@ -764,71 +765,71 @@ nk_set_thread_fork_output (void * result)
  */
 void nk_thread_queue_sleep_extended(nk_thread_queue_t *wq, int (*cond_check)(void *state), void *state)
 {
-    nk_thread_t * t = get_cur_thread();
-    uint8_t flags;
+  nk_thread_t * t = get_cur_thread();
+  uint8_t flags;
 
-    THREAD_DEBUG("Thread %lu (%s) going to sleep on queue %p\n", t->tid, t->name, (void*)wq);
+  THREAD_DEBUG("Thread %lu (%s) going to sleep on queue %p\n", t->tid, t->name, (void*)wq);
 
-    // grab control over the the wait queue
-    flags = spin_lock_irq_save(&wq->lock);
+  // grab control over the the wait queue
+  flags = spin_lock_irq_save(&wq->lock);
 
-    // at this point, any waker is either about to start on the
-    // queue or has just finished  It's possible that
-    // we have raced with with it and it has just finished
-    // we therefore need to double check the condition now
+  // at this point, any waker is either about to start on the
+  // queue or has just finished  It's possible that
+  // we have raced with with it and it has just finished
+  // we therefore need to double check the condition now
 
-    if (cond_check && cond_check(state)) { 
-	// The condition we are waiting on has been achieved
-	// already.  The waker is either done waking up
-	// threads or has not yet started.  In either case
-	// we do not want to queue ourselves
-	spin_unlock_irq_restore(&wq->lock, flags);
-	THREAD_DEBUG("Thread %lu (%s) has fast wakeup on queue %p - condition already met\n", t->tid, t->name, (void*)wq);
-	return;
-    } else {
-	// the condition still is not signalled 
-	// or the condition is not important, therefore
-	// while still holding the lock, put ourselves on the 
-	// wait queue
+  if (cond_check && cond_check(state)) { 
+    // The condition we are waiting on has been achieved
+    // already.  The waker is either done waking up
+    // threads or has not yet started.  In either case
+    // we do not want to queue ourselves
+    spin_unlock_irq_restore(&wq->lock, flags);
+    THREAD_DEBUG("Thread %lu (%s) has fast wakeup on queue %p - condition already met\n", t->tid, t->name, (void*)wq);
+    return;
+  } else {
+    // the condition still is not signalled 
+    // or the condition is not important, therefore
+    // while still holding the lock, put ourselves on the 
+    // wait queue
 
-	THREAD_DEBUG("Thread %lu (%s) is queueing itself on queue %p\n", t->tid, t->name, (void*)wq);
+    THREAD_DEBUG("Thread %lu (%s) is queueing itself on queue %p\n", t->tid, t->name, (void*)wq);
 	
-	t->status = NK_THR_WAITING;
-	nk_enqueue_entry(wq, &(t->wait_node));
+    t->status = NK_THR_WAITING;
+    nk_enqueue_entry(wq, &(t->wait_node));
 
-	// force arch and compiler to do above writes
-	__asm__ __volatile__ ("mfence" : : : "memory"); 
+    // force arch and compiler to do above writes
+    __asm__ __volatile__ ("mfence" : : : "memory"); 
 
-	// disallow the scheduler from context switching this core
-	// until we (in particular nk_sched_sleep()) decide otherwise
-	preempt_disable(); 
+    // disallow the scheduler from context switching this core
+    // until we (in particular nk_sched_sleep()) decide otherwise
+    preempt_disable(); 
 
-	// reenable local interrupts - the scheduler is still blocked
-	// because we have preemption off
-	// any waker at this point will still get stuck on the wait queue lock
-	// it will be a short spin, hopefully
-	irq_enable_restore(flags);
+    // reenable local interrupts - the scheduler is still blocked
+    // because we have preemption off
+    // any waker at this point will still get stuck on the wait queue lock
+    // it will be a short spin, hopefully
+    irq_enable_restore(flags);
 	
-	THREAD_DEBUG("Thread %lu (%s) is having the scheduler put itself to sleep on queue %p\n", t->tid, t->name, (void*)wq);
+    THREAD_DEBUG("Thread %lu (%s) is having the scheduler put itself to sleep on queue %p\n", t->tid, t->name, (void*)wq);
 
-	// We now get the scheduler to do a context switch
-	// and just after it completes its scheduling pass, 
-	// it will release the wait queue lock for us
-	// it will also reenable preemption on its context switch out
-	nk_sched_sleep(&wq->lock);
+    // We now get the scheduler to do a context switch
+    // and just after it completes its scheduling pass, 
+    // it will release the wait queue lock for us
+    // it will also reenable preemption on its context switch out
+    nk_sched_sleep(&wq->lock);
 	
-	THREAD_DEBUG("Thread %lu (%s) has slow wakeup on queue %p\n", t->tid, t->name, (void*)wq);
+    THREAD_DEBUG("Thread %lu (%s) has slow wakeup on queue %p\n", t->tid, t->name, (void*)wq);
 
-	// note no spin_unlock here since nk_sched_sleep will have 
-	// done it for us
+    // note no spin_unlock here since nk_sched_sleep will have 
+    // done it for us
 
-	return;
-    }
+    return;
+  }
 }
 
 void nk_thread_queue_sleep(nk_thread_queue_t *wq)
 {
-    return nk_thread_queue_sleep_extended(wq,0,0);
+  return nk_thread_queue_sleep_extended(wq,0,0);
 }
 
 
@@ -842,42 +843,42 @@ void nk_thread_queue_sleep(nk_thread_queue_t *wq)
  */
 void nk_thread_queue_wake_one (nk_thread_queue_t * q)
 {
-    nk_queue_entry_t * elm = NULL;
-    nk_thread_t * t = NULL;
-    uint8_t flags = irq_disable_save();
+  nk_queue_entry_t * elm = NULL;
+  nk_thread_t * t = NULL;
+  uint8_t flags = irq_disable_save();
 
-    if (in_interrupt_context()) {
-	THREAD_DEBUG("[Interrupt Context] Thread %lu (%s) is waking one waiter on thread queue (q=%p)\n", get_cur_thread()->tid, get_cur_thread()->name, (void*)q);
-    } else {
-	THREAD_DEBUG("Thread %lu (%s) is waking one waiter on thread queue (q=%p)\n", get_cur_thread()->tid, get_cur_thread()->name, (void*)q);
-    }
+  if (in_interrupt_context()) {
+    THREAD_DEBUG("[Interrupt Context] Thread %lu (%s) is waking one waiter on thread queue (q=%p)\n", get_cur_thread()->tid, get_cur_thread()->name, (void*)q);
+  } else {
+    THREAD_DEBUG("Thread %lu (%s) is waking one waiter on thread queue (q=%p)\n", get_cur_thread()->tid, get_cur_thread()->name, (void*)q);
+  }
 
-    ASSERT(q);
+  ASSERT(q);
 
-    elm = nk_dequeue_first_atomic(q);
+  elm = nk_dequeue_first_atomic(q);
 
-    /* no one is sleeping on this queue */
-    if (!elm) {
-        THREAD_DEBUG("No waiters on wait queue\n");
-        goto out;
-    }
+  /* no one is sleeping on this queue */
+  if (!elm) {
+    THREAD_DEBUG("No waiters on wait queue\n");
+    goto out;
+  }
 
-    t = container_of(elm, nk_thread_t, wait_node);
+  t = container_of(elm, nk_thread_t, wait_node);
 
-    ASSERT(t);
-    ASSERT(t->status == NK_THR_WAITING);
+  ASSERT(t);
+  ASSERT(t->status == NK_THR_WAITING);
 
-    if (nk_sched_awaken(t, t->current_cpu)) { 
-	THREAD_ERROR("Failed to awaken thread\n");
-	goto out;
-    }
+  if (nk_sched_awaken(t, t->current_cpu)) { 
+    THREAD_ERROR("Failed to awaken thread\n");
+    goto out;
+  }
 
-    nk_sched_kick_cpu(t->current_cpu);
+  nk_sched_kick_cpu(t->current_cpu);
 
-    THREAD_DEBUG("Thread queue wake one (q=%p) work up thread %lu (%s)\n", (void*)q, t->tid, t->name);
+  THREAD_DEBUG("Thread queue wake one (q=%p) work up thread %lu (%s)\n", (void*)q, t->tid, t->name);
 
-out:
-    irq_enable_restore(flags);
+  out:
+  irq_enable_restore(flags);
 
 }
 
@@ -896,7 +897,7 @@ out:
  */
 void nk_thread_queue_wake_all (nk_thread_queue_t * q)
 {
-    _thread_queue_wake_all(q,0);
+  _thread_queue_wake_all(q,0);
 }
 
 /* 
@@ -914,23 +915,23 @@ void nk_thread_queue_wake_all (nk_thread_queue_t * q)
 int
 nk_tls_key_create (nk_tls_key_t * key, void (*destructor)(void*))
 {
-    int i;
+  int i;
 
-    for (i = 0; i < TLS_MAX_KEYS; i++) {
-        unsigned sn = tls_keys[i].seq_num;
+  for (i = 0; i < TLS_MAX_KEYS; i++) {
+    unsigned sn = tls_keys[i].seq_num;
 
-        if (TLS_KEY_AVAIL(sn) && TLS_KEY_USABLE(sn) &&
-            atomic_cmpswap(tls_keys[i].seq_num, sn, sn+1) == sn) {
+    if (TLS_KEY_AVAIL(sn) && TLS_KEY_USABLE(sn) &&
+        atomic_cmpswap(tls_keys[i].seq_num, sn, sn+1) == sn) {
 
-            tls_keys[i].destructor = destructor;
-            *key = i;
+      tls_keys[i].destructor = destructor;
+      *key = i;
 
-            /* we're done */
-            return 0;
-        }
+      /* we're done */
+      return 0;
     }
+  }
 
-    return -EAGAIN;
+  return -EAGAIN;
 }
 
 
@@ -945,16 +946,16 @@ nk_tls_key_create (nk_tls_key_t * key, void (*destructor)(void*))
 int 
 nk_tls_key_delete (nk_tls_key_t key)
 {
-    if (likely(key < TLS_MAX_KEYS)) {
-        unsigned sn = tls_keys[key].seq_num;
+  if (likely(key < TLS_MAX_KEYS)) {
+    unsigned sn = tls_keys[key].seq_num;
 
-        if (likely(!TLS_KEY_AVAIL(sn)) &&
-            atomic_cmpswap(tls_keys[key].seq_num, sn, sn+1) == sn) {
-            return 0;
-        }
+    if (likely(!TLS_KEY_AVAIL(sn)) &&
+        atomic_cmpswap(tls_keys[key].seq_num, sn, sn+1) == sn) {
+      return 0;
     }
+  }
 
-    return -EINVAL;
+  return -EINVAL;
 }
 
 
@@ -972,14 +973,14 @@ nk_tls_key_delete (nk_tls_key_t key)
 void*
 nk_tls_get (nk_tls_key_t key) 
 {
-    nk_thread_t * t;
+  nk_thread_t * t;
 
-    if (unlikely(key >= TLS_MAX_KEYS)) {
-        return NULL;
-    }
+  if (unlikely(key >= TLS_MAX_KEYS)) {
+    return NULL;
+  }
 
-    t = get_cur_thread();
-    return (void*)t->tls[key];
+  t = get_cur_thread();
+  return (void*)t->tls[key];
 }
 
 
@@ -995,17 +996,17 @@ nk_tls_get (nk_tls_key_t key)
 int 
 nk_tls_set (nk_tls_key_t key, const void * val)
 {
-    nk_thread_t * t;
-    unsigned sn;
+  nk_thread_t * t;
+  unsigned sn;
 
-    if (key >= TLS_MAX_KEYS || 
-        TLS_KEY_AVAIL((sn = tls_keys[key].seq_num))) {
-        return -EINVAL;
-    }
+  if (key >= TLS_MAX_KEYS || 
+      TLS_KEY_AVAIL((sn = tls_keys[key].seq_num))) {
+    return -EINVAL;
+  }
 
-    t = get_cur_thread();
-    t->tls[key] = val;
-    return 0;
+  t = get_cur_thread();
+  t->tls[key] = val;
+  return 0;
 }
 
 
@@ -1019,8 +1020,8 @@ nk_tls_set (nk_tls_key_t key, const void * val)
 nk_thread_id_t
 nk_get_tid (void) 
 {
-    nk_thread_t * t = (nk_thread_t*)get_cur_thread();
-    return (nk_thread_id_t)t;
+  nk_thread_t * t = (nk_thread_t*)get_cur_thread();
+  return (nk_thread_id_t)t;
 }
 
 
@@ -1033,11 +1034,11 @@ nk_get_tid (void)
 nk_thread_id_t
 nk_get_parent_tid (void) 
 {
-    nk_thread_t * t = (nk_thread_t*)get_cur_thread();
-    if (t && t->parent) {
-        return (nk_thread_id_t)t->parent;
-    }
-    return NULL;
+  nk_thread_t * t = (nk_thread_t*)get_cur_thread();
+  if (t && t->parent) {
+    return (nk_thread_id_t)t->parent;
+  }
+  return NULL;
 }
 
 
@@ -1070,131 +1071,131 @@ nk_get_parent_tid (void)
 nk_thread_id_t 
 __thread_fork (void)
 {
-    nk_thread_t *parent = get_cur_thread();
-    nk_thread_id_t  tid;
-    nk_thread_t * t;
-    nk_stack_size_t size, alloc_size;
-    uint64_t     rbp1_offset_from_ret0_addr;
-    void         *child_stack;
-    uint64_t     rsp;
+  nk_thread_t *parent = get_cur_thread();
+  nk_thread_id_t  tid;
+  nk_thread_t * t;
+  nk_stack_size_t size, alloc_size;
+  uint64_t     rbp1_offset_from_ret0_addr;
+  void         *child_stack;
+  uint64_t     rsp;
 
-    __asm__ __volatile__ ( "movq %%rsp, %0" : "=r"(rsp) : : "memory");
+  __asm__ __volatile__ ( "movq %%rsp, %0" : "=r"(rsp) : : "memory");
 
 #ifdef NAUT_CONFIG_ENABLE_STACK_CHECK
-    // now check again after update to see if we didn't overrun/underrun the stack in the parent... 
-    if ((uint64_t)rsp <= (uint64_t)parent->stack ||
-	(uint64_t)rsp >= (uint64_t)(parent->stack + parent->stack_size)) { 
-	THREAD_ERROR("Parent's top of stack (%p) exceeds boundaries of stack (%p-%p)\n",
-		     rsp, parent->stack, parent->stack+parent->stack_size);
-	panic("Detected stack out of bounds in parent during fork\n");
-    }
+  // now check again after update to see if we didn't overrun/underrun the stack in the parent... 
+  if ((uint64_t)rsp <= (uint64_t)parent->stack ||
+      (uint64_t)rsp >= (uint64_t)(parent->stack + parent->stack_size)) { 
+    THREAD_ERROR("Parent's top of stack (%p) exceeds boundaries of stack (%p-%p)\n",
+                 rsp, parent->stack, parent->stack+parent->stack_size);
+    panic("Detected stack out of bounds in parent during fork\n");
+  }
 #endif
 
-    THREAD_DEBUG("Forking thread from parent=%p tid=%lu stack=%p-%p rsp=%p\n", parent, parent->tid,parent->stack,parent->stack+parent->stack_size,rsp);
+  THREAD_DEBUG("Forking thread from parent=%p tid=%lu stack=%p-%p rsp=%p\n", parent, parent->tid,parent->stack,parent->stack+parent->stack_size,rsp);
 
 #ifdef NAUT_CONFIG_THREAD_OPTIMIZE 
-    THREAD_WARN("Thread fork may function incorrectly with aggressive threading optimizations\n");
+  THREAD_WARN("Thread fork may function incorrectly with aggressive threading optimizations\n");
 #endif
 
-    void *rbp0      = __builtin_frame_address(0);                   // current rbp, *rbp0 = rbp1
-    void *rbp1      = __builtin_frame_address(1);                   // caller rbp, *rbp1 = rbp2  (forker's frame)
-    void *rbp_tos   = __builtin_frame_address(STACK_CLONE_DEPTH);   // should scan backward to avoid having this be zero or crazy
-    void *ret0_addr = rbp0 + 8;
+  void *rbp0      = __builtin_frame_address(0);                   // current rbp, *rbp0 = rbp1
+  void *rbp1      = __builtin_frame_address(1);                   // caller rbp, *rbp1 = rbp2  (forker's frame)
+  void *rbp_tos   = __builtin_frame_address(STACK_CLONE_DEPTH);   // should scan backward to avoid having this be zero or crazy
+  void *ret0_addr = rbp0 + 8;
 
-    // we're being called with a stack not as deep as STACK_CLONE_DEPTH...
-    // fail back to a single frame...
-    if ((uint64_t)rbp_tos <= (uint64_t)parent->stack ||
-	(uint64_t)rbp_tos >= (uint64_t)(parent->stack + parent->stack_size)) { 
-	THREAD_DEBUG("Cannot resolve %lu stack frames on fork, using just one\n", STACK_CLONE_DEPTH);
-        rbp_tos = rbp1;
-    }
+  // we're being called with a stack not as deep as STACK_CLONE_DEPTH...
+  // fail back to a single frame...
+  if ((uint64_t)rbp_tos <= (uint64_t)parent->stack ||
+      (uint64_t)rbp_tos >= (uint64_t)(parent->stack + parent->stack_size)) { 
+    THREAD_DEBUG("Cannot resolve %lu stack frames on fork, using just one\n", STACK_CLONE_DEPTH);
+    rbp_tos = rbp1;
+  }
 
 
-    // from last byte of tos_rbp to the last byte of the stack on return from this function 
-    // (return address of wrapper)
-    // the "launch pad" is added so that in the case where there is no stack frame above the caller
-    // we still have the space to fake one.
-    size = (rbp_tos + 8) - ret0_addr + LAUNCHPAD;   
+  // from last byte of tos_rbp to the last byte of the stack on return from this function 
+  // (return address of wrapper)
+  // the "launch pad" is added so that in the case where there is no stack frame above the caller
+  // we still have the space to fake one.
+  size = (rbp_tos + 8) - ret0_addr + LAUNCHPAD;   
 
-    //THREAD_DEBUG("rbp0=%p rbp1=%p rbp_tos=%p, ret0_addr=%p\n", rbp0, rbp1, rbp_tos, ret0_addr);
+  //THREAD_DEBUG("rbp0=%p rbp1=%p rbp_tos=%p, ret0_addr=%p\n", rbp0, rbp1, rbp_tos, ret0_addr);
 
-    rbp1_offset_from_ret0_addr = rbp1 - ret0_addr;
+  rbp1_offset_from_ret0_addr = rbp1 - ret0_addr;
 
-    alloc_size = parent->stack_size;
+  alloc_size = parent->stack_size;
 
-    if (nk_thread_create(NULL,        // no function pointer, we'll set rip explicity in just a sec...
-                         NULL,        // no input args, it's not a function
-                         NULL,        // no output args
-                         0,           // this thread's parent will wait on it
-                         alloc_size,  // stack size
-                         &tid,        // give me a thread id
-                         CPU_ANY)     // not bound to any particular CPU
-            < 0) {
-        THREAD_ERROR("Could not fork thread\n");
-        return 0;
-    }
+  if (nk_thread_create(NULL,        // no function pointer, we'll set rip explicity in just a sec...
+                       NULL,        // no input args, it's not a function
+                       NULL,        // no output args
+                       0,           // this thread's parent will wait on it
+                       alloc_size,  // stack size
+                       &tid,        // give me a thread id
+                       CPU_ANY)     // not bound to any particular CPU
+      < 0) {
+    THREAD_ERROR("Could not fork thread\n");
+    return 0;
+  }
 
-    t = (nk_thread_t*)tid;
+  t = (nk_thread_t*)tid;
 
-    THREAD_DEBUG("Forked thread created: %p (tid=%lu) stack=%p size=%lu rsp=%p\n",t,t->tid,t->stack,t->stack_size,t->rsp);
+  THREAD_DEBUG("Forked thread created: %p (tid=%lu) stack=%p size=%lu rsp=%p\n",t,t->tid,t->stack,t->stack_size,t->rsp);
 
-    child_stack = t->stack;
+  child_stack = t->stack;
 
-    // this is at the top of the stack, just in case something goes wrong
-    thread_push(t, (uint64_t)&thread_cleanup);
+  // this is at the top of the stack, just in case something goes wrong
+  thread_push(t, (uint64_t)&thread_cleanup);
 
-    //THREAD_DEBUG("child_stack=%p, alloc_size=%lu size=%lu\n",child_stack,alloc_size,size);
-    //THREAD_DEBUG("copy to %p-%p from %p\n", child_stack + alloc_size - size,
-    //             child_stack + alloc_size - size + size - LAUNCHPAD, ret0_addr);
+  //THREAD_DEBUG("child_stack=%p, alloc_size=%lu size=%lu\n",child_stack,alloc_size,size);
+  //THREAD_DEBUG("copy to %p-%p from %p\n", child_stack + alloc_size - size,
+  //             child_stack + alloc_size - size + size - LAUNCHPAD, ret0_addr);
 
-    // Copy stack frames of caller and up to stack max
-    // this should copy from 1st byte of my_rbp to last byte of tos_rbp
-    // notice that leaves ret
-    memcpy(child_stack + alloc_size - size, ret0_addr, size - LAUNCHPAD);
-    t->rsp = (uint64_t)(child_stack + alloc_size - size);
+  // Copy stack frames of caller and up to stack max
+  // this should copy from 1st byte of my_rbp to last byte of tos_rbp
+  // notice that leaves ret
+  memcpy(child_stack + alloc_size - size, ret0_addr, size - LAUNCHPAD);
+  t->rsp = (uint64_t)(child_stack + alloc_size - size);
 
-    void **rbp2_ptr = (void**)(t->rsp + rbp1_offset_from_ret0_addr);
-    void **ret2_ptr = rbp2_ptr+1;
+  void **rbp2_ptr = (void**)(t->rsp + rbp1_offset_from_ret0_addr);
+  void **ret2_ptr = rbp2_ptr+1;
 
-    // rbp2 we don't care about
-    *rbp2_ptr = 0x0ULL;
+  // rbp2 we don't care about
+  *rbp2_ptr = 0x0ULL;
 
-    // fix up the return address to point to our thread cleanup function
-    *ret2_ptr = &thread_cleanup;
+  // fix up the return address to point to our thread cleanup function
+  *ret2_ptr = &thread_cleanup;
 
-    // now we need to setup the interrupt stack etc.
-    // we provide null for thread func to indicate this is a fork
-    thread_setup_init_stack(t, NULL, NULL); 
+  // now we need to setup the interrupt stack etc.
+  // we provide null for thread func to indicate this is a fork
+  thread_setup_init_stack(t, NULL, NULL); 
 
-    THREAD_DEBUG("Forked thread initialized: %p (tid=%lu) stack=%p size=%lu rsp=%p\n",t,t->tid,t->stack,t->stack_size,t->rsp);
+  THREAD_DEBUG("Forked thread initialized: %p (tid=%lu) stack=%p size=%lu rsp=%p\n",t,t->tid,t->stack,t->stack_size,t->rsp);
 
 #ifdef NAUT_CONFIG_ENABLE_STACK_CHECK
-    // now check the child before we attempt to run it
-    if ((uint64_t)t->rsp <= (uint64_t)t->stack ||
-	(uint64_t)t->rsp >= (uint64_t)(t->stack + t->stack_size)) { 
-	THREAD_ERROR("Child's rsp (%p) exceeds boundaries of stack (%p-%p)\n",
-		     t->rsp, t->stack, t->stack+t->stack_size);
-	panic("Detected stack out of bounds in child during fork\n");
-	return 0;
-    }
+  // now check the child before we attempt to run it
+  if ((uint64_t)t->rsp <= (uint64_t)t->stack ||
+      (uint64_t)t->rsp >= (uint64_t)(t->stack + t->stack_size)) { 
+    THREAD_ERROR("Child's rsp (%p) exceeds boundaries of stack (%p-%p)\n",
+                 t->rsp, t->stack, t->stack+t->stack_size);
+    panic("Detected stack out of bounds in child during fork\n");
+    return 0;
+  }
 #endif
 
 #ifdef NAUT_CONFIG_FPU_SAVE
-    // clone the floating point state
-    extern void nk_fp_save(void *dest);
-    nk_fp_save(t->fpu_state);
+  // clone the floating point state
+  extern void nk_fp_save(void *dest);
+  nk_fp_save(t->fpu_state);
 #endif
 
-    if (nk_sched_make_runnable(t,t->current_cpu,1)) { 
-	THREAD_ERROR("Scheduler failed to run thread (%p, tid=%u) on cpu %u\n",
-		    t, t->tid, t->current_cpu);
-	return 0;
-    }
+  if (nk_sched_make_runnable(t,t->current_cpu,1)) { 
+    THREAD_ERROR("Scheduler failed to run thread (%p, tid=%u) on cpu %u\n",
+                 t, t->tid, t->current_cpu);
+    return 0;
+  }
 
-    THREAD_DEBUG("Forked thread made runnable: %p (tid=%lu)\n",t,t->tid);
+  THREAD_DEBUG("Forked thread made runnable: %p (tid=%lu)\n",t,t->tid);
 
-    // return child's tid to parent
-    return tid;
+  // return child's tid to parent
+  return tid;
 }
 
 
@@ -1205,62 +1206,62 @@ __thread_fork (void)
 static void 
 tls_dummy (void * in, void ** out)
 {
-    unsigned i;
-    nk_tls_key_t * keys = NULL;
+  unsigned i;
+  nk_tls_key_t * keys = NULL;
 
-    //THREAD_INFO("Beginning test of thread local storage...\n");
-    keys = malloc(sizeof(nk_tls_key_t)*TLS_MAX_KEYS);
-    if (!keys) {
-        THREAD_ERROR("could not allocate keys\n");
-        return;
+  //THREAD_INFO("Beginning test of thread local storage...\n");
+  keys = malloc(sizeof(nk_tls_key_t)*TLS_MAX_KEYS);
+  if (!keys) {
+    THREAD_ERROR("could not allocate keys\n");
+    return;
+  }
+
+  for (i = 0; i < TLS_MAX_KEYS; i++) {
+    if (nk_tls_key_create(&keys[i], NULL) != 0) {
+      THREAD_ERROR("Could not create TLS key (%u)\n", i);
+      goto out_err;
     }
 
-    for (i = 0; i < TLS_MAX_KEYS; i++) {
-        if (nk_tls_key_create(&keys[i], NULL) != 0) {
-            THREAD_ERROR("Could not create TLS key (%u)\n", i);
-            goto out_err;
-        }
-
-        if (nk_tls_set(keys[i], (const void *)(i + 100L)) != 0) {
-            THREAD_ERROR("Could not set TLS key (%u)\n", i);
-            goto out_err;
-        }
-
+    if (nk_tls_set(keys[i], (const void *)(i + 100L)) != 0) {
+      THREAD_ERROR("Could not set TLS key (%u)\n", i);
+      goto out_err;
     }
 
-    for (i = 0; i < TLS_MAX_KEYS; i++) {
-        if (nk_tls_get(keys[i]) != (void*)(i + 100L)) {
-            THREAD_ERROR("Mismatched TLS val! Got %p, should be %p\n", nk_tls_get(keys[i]), (void*)(i+100L));
-            goto out_err;
-        }
+  }
 
-        if (nk_tls_key_delete(keys[i]) != 0) {
-            THREAD_ERROR("Could not delete TLS key %u\n", i);
-            goto out_err;
-        }
+  for (i = 0; i < TLS_MAX_KEYS; i++) {
+    if (nk_tls_get(keys[i]) != (void*)(i + 100L)) {
+      THREAD_ERROR("Mismatched TLS val! Got %p, should be %p\n", nk_tls_get(keys[i]), (void*)(i+100L));
+      goto out_err;
     }
 
-    if (nk_tls_key_create(&keys[0], NULL) != 0) {
-        THREAD_ERROR("2nd key create failed\n");
-        goto out_err;
+    if (nk_tls_key_delete(keys[i]) != 0) {
+      THREAD_ERROR("Could not delete TLS key %u\n", i);
+      goto out_err;
     }
+  }
+
+  if (nk_tls_key_create(&keys[0], NULL) != 0) {
+    THREAD_ERROR("2nd key create failed\n");
+    goto out_err;
+  }
     
-    if (nk_tls_key_delete(keys[0]) != 0) {
-        THREAD_ERROR("2nd key delete failed\n");
-        goto out_err;
-    }
+  if (nk_tls_key_delete(keys[0]) != 0) {
+    THREAD_ERROR("2nd key delete failed\n");
+    goto out_err;
+  }
 
-    THREAD_INFO("Thread local storage test succeeded\n");
+  THREAD_INFO("Thread local storage test succeeded\n");
 
-out_err:
-    free(keys);
+  out_err:
+  free(keys);
 }
 
 
 void 
 nk_tls_test (void)
 {
-    nk_thread_start(tls_dummy, NULL, NULL, 1, TSTACK_DEFAULT, NULL, 1);
+  nk_thread_start(tls_dummy, NULL, NULL, 1, TSTACK_DEFAULT, NULL, 1);
 }
 
 

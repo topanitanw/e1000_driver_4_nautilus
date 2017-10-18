@@ -130,23 +130,42 @@ struct nk_dev *nk_dev_find(char *name)
     return target;
 }
 
+static int generic_cond_check(void * state) {
+  struct nk_dev* dev = (struct nk_dev*) state;
+  return dev->condition;
+}
 
 void nk_dev_wait(struct nk_dev *d)
 {
+  DEBUG("%s: within %s\n", __func__, __func__);
+  // nk_dev_wait_extended(d, generic_cond_check, d);
+  nk_dev_wait_extended(d, 0, 0);
+}
+
+void nk_dev_wait_extended(struct nk_dev* d, int (*cond_check)(void *state),
+                          void *state)
+{
+  DEBUG("%s: within %s\n", __func__, __func__);
   if (get_cpu()->interrupt_nesting_level) { 
     // We are in an interrupt context, and 
     // we cannot wait...
+    DEBUG("%s: checking interrupt_nesting_level %d\n",
+          __func__,
+          get_cpu()->interrupt_nesting_level);
     return;
   } else {
     // We are in a thread context and we will
     // put ourselves to sleep
-    nk_thread_queue_sleep_extended(d->waiting_threads, 0, 0);
+    DEBUG("%s: before calling nk_thread_queue_sleep_extended\n", __func__);
+    nk_thread_queue_sleep_extended(d->waiting_threads, cond_check, state);
+    DEBUG("%s: after calling nk_thread_queue_sleep_extended\n", __func__);    
   }
 }
 
 void nk_dev_signal(struct nk_dev *d)
 {
-    nk_thread_queue_wake_all(d->waiting_threads);
+  d->condition = 1;
+  nk_thread_queue_wake_all(d->waiting_threads);
 }
 
 void nk_dev_dump_devices()

@@ -158,7 +158,6 @@ struct arp_header {
   uint32_t target_ip_addr;             /* target protocol address */
 } __attribute__((packed));
 
-
 // icmp header
 // size = 8 without data
 struct icmp_header {
@@ -509,6 +508,27 @@ static void print_arp_packet(uint8_t* pkt) {
   print_arp_header(get_arp_header(pkt));
 }
 
+static void print_arp_short(uint8_t* pkt) {
+  struct arp_packet* arp_pkt = (struct arp_packet*) pkt;
+  char buf[100];
+  memset(buf, 0, sizeof(buf));
+  char ip_buf[IP_STRING_LEN];
+  ip_inttostr(ntoh32(arp_pkt->arp.sender_ip_addr), ip_buf, IP_STRING_LEN);
+  sint64_t buf_offset = sprintf(buf, "ARP from ip: %s ", ip_buf);
+  uint16_t host16 = ntoh16(arp_pkt->arp.opcode);
+  switch(host16) {
+    case(ARP_OPCODE_REQUEST):
+      sprintf(&buf[buf_offset], "REQUEST");
+      break;
+    case(ARP_OPCODE_REPLY):
+      sprintf(&buf[buf_offset], "REPLY");
+      break;
+    default:
+      sprintf(&buf[buf_offset], "UNKNOWN");
+  }  
+  DEBUG(" %s\n", buf);  
+}
+
 static void print_ip_header(struct ip_header* pkt) {
   DEBUG("ip header ------------------------------\n");
   uint16_t host16 = 0;
@@ -592,6 +612,17 @@ static void print_udp_packet(uint8_t* pkt) {
   print_udp_header(get_udp_header(pkt));
 }
 
+static void print_udp_short(uint8_t* pkt) {
+  struct udp_packet* udp_pkt = (struct udp_packet*) pkt;
+  char buf[80];
+  memset(buf, 0, sizeof(buf));
+  char ip_buf[IP_STRING_LEN];
+  ip_inttostr(ntoh32(udp_pkt->ip.ip_dst), ip_buf, IP_STRING_LEN);
+  sprintf(buf, "UDP udp data len: %d ip_dst: %s src_port: %d\0",
+          udp_pkt->udp.length, ip_buf, udp_pkt->udp.src_port);
+  DEBUG(" %s\n", buf);
+}
+
 static int send_arp_response_packet(uint8_t* input_packet,
                                     uint8_t* output_packet,
                                     uint8_t* nic_mac,
@@ -634,7 +665,7 @@ static int send_udp_packet(uint8_t* input_packet, uint8_t* output_packet,
   memcpy(udp_data_out, udp_data_in, data_in_len);
   create_udp_response(output_packet, eth_hdr_in->src_mac,
                       ntoh32(ip_hdr_in->ip_src),
-                      nic_mac, ai->nk_ip_addr, strlen(udp_data_out),
+                      nic_mac, ai->nk_ip_addr, data_in_len,
                       get_udp_header(input_packet), ai);
   DEBUG("finish creating the udop response\n");
   DEBUG("printing the response packet to debug\n");
@@ -651,7 +682,7 @@ void send_arp_request_packet(uint8_t* pkt,
   create_eth_header(pkt, ARP_BROADCAST_MAC, nic_mac, ETHERNET_TYPE_ARP);
   create_arp_header(arp_pkt, ARP_OPCODE_REQUEST, nic_mac, ai->nk_ip_addr,
                     0, ai->dst_ip_addr);
-  print_arp_packet(pkt);
+  // print_arp_packet(pkt);
   DEBUG("sending arp request\n");
   nk_net_dev_send_packet(ai->netdev,
                          pkt,
@@ -683,22 +714,23 @@ static void ai_thread(void *in, void **out)
   uint8_t* output_packet = malloc(buffer_size);
   DEBUG("ai_thread before while ------------------------------\n");
   uint8_t condition = true;
+  struct eth_header *eth_hdr_in = (struct eth_header*) input_packet;
   while (condition) {
     memset(input_packet, 0, buffer_size);
     memset(output_packet, 0, buffer_size);
     // wait to receive a packet - should check errors
-    DEBUG("ai_thread: while receiving ------------------------------\n");
+    // DEBUG("ai_thread: while receiving ------------------------------\n");
     nk_net_dev_receive_packet(ai->netdev, input_packet,
                               c.max_tu, NK_DEV_REQ_BLOCKING,0,0);
-    dump_packet(input_packet, 24);
-    struct eth_header *eth_hdr_in = (struct eth_header*) input_packet;
+    // dump_packet(input_packet, 24);
+
     // if(input packet is an ARP packet its a request && it matches ai->ip_addr)
     /* DEBUG("ETHERNET_TYPE_ARP: %d\n", */
     /*       ntoh16(eth_hdr_in->eth_type) == ETHERNET_TYPE_ARP); */
     /* DEBUG("if it is my packet ------------------------------\n"); */
     /* DEBUG("compare broadcast %d\n", */
     /*       compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC)); */
-    DEBUG("ai_thread: compare dst %d\n", compare_mac(eth_hdr_in->dst_mac, c.mac));
+    // DEBUG("ai_thread: compare dst %d\n", compare_mac(eth_hdr_in->dst_mac, c.mac));
     if (compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) ||
         compare_mac(eth_hdr_in->dst_mac, c.mac)) {
 
@@ -709,13 +741,14 @@ static void ai_thread(void *in, void **out)
         /*       ntoh32(arp_pkt_in->target_ip_addr) == ai->ip_addr); */
         /* DEBUG("is it arp request %d\n", */
         /*       ntoh16(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST); */
-        print_arp_packet(input_packet);
+        // print_arp_packet(input_packet);
+
         if ((ntoh32(arp_pkt_in->target_ip_addr) == ai->nk_ip_addr) &&
             (ntoh16(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST)) {
-          // panic("arp matches\n\n\n\n\n");
           // DEBUG("arp matches\n");
+          print_arp_short(input_packet);          
           send_arp_response_packet(input_packet, output_packet, c.mac, ai);
-          DEBUG("send arp packet complete %^\n");
+          DEBUG("send arp packet complete\n");
         }
       } else if ((ntoh16(eth_hdr_in->eth_type) == ETHERNET_TYPE_IPV4) &&
                  (ntoh32(ip_hdr_in->ip_dst) == ai->nk_ip_addr)) {
@@ -727,8 +760,7 @@ static void ai_thread(void *in, void **out)
             (icmp_hdr_in->type == ICMP_ECHO_REQUEST)) {
           send_icmp_packet(input_packet, output_packet, c.mac, ai);
         } else if (ip_hdr_in->protocol == IP_PRO_UDP) {
-          panic("receive a udp packet\n\n\n\n\n");
-          print_udp_packet(input_packet);
+          print_udp_short(input_packet);
           send_udp_packet(input_packet, output_packet, c.mac, ai);
           if(ai->vc) {
             char buf_mac[MAC_STRING_LEN];

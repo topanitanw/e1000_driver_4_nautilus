@@ -248,14 +248,14 @@ static int e1000e_send_packet(uint8_t* packet_addr,
                               uint64_t packet_size,
                               struct e1000e_state *state) {
   DEBUG("e1000e_send_packet fn\n");
-  DEBUG("send pkt fn: pkt_addr 0x%p pkt_size: %d\n", packet_addr, packet_size);
+  // DEBUG("send pkt fn: pkt_addr 0x%p pkt_size: %d\n", packet_addr, packet_size);
   TXD_TAIL = READ_MEM(state->dev, E1000E_TDT_OFFSET);
-  DEBUG("send pkt fn: before sending TDH = %d TDT = %d tail_pos = %d\n",
-        READ_MEM(state->dev, E1000E_TDH_OFFSET),
-        READ_MEM(state->dev, E1000E_TDT_OFFSET),
-        TXD_TAIL);
-  DEBUG("send pkt fn: tpt total packet transmit: %d\n",
-        READ_MEM(state->dev, E1000E_TPT_OFFSET));
+  /* DEBUG("send pkt fn: before sending TDH = %d TDT = %d tail_pos = %d\n", */
+  /*       READ_MEM(state->dev, E1000E_TDH_OFFSET), */
+  /*       READ_MEM(state->dev, E1000E_TDT_OFFSET), */
+  /*       TXD_TAIL); */
+  /* DEBUG("send pkt fn: tpt total packet transmit: %d\n", */
+  /*       READ_MEM(state->dev, E1000E_TPT_OFFSET)); */
   if(packet_size > MAX_TU) {
     ERROR("send pkt fn: packet is too large.\n");
     return -1;
@@ -280,24 +280,24 @@ static int e1000e_send_packet(uint8_t* packet_addr,
   TXD_CMD(TXD_TAIL).rs = 1;
 
   // increment transmit descriptor list tail by 1
-  DEBUG("send pkt fn: moving the tail\n");
+  // DEBUG("send pkt fn: moving the tail\n");
   TXD_TAIL = TXD_INC(1, TXD_TAIL);
   WRITE_MEM(state->dev, E1000E_TDT_OFFSET, TXD_TAIL);
-  DEBUG("send pkt fn: after moving tail TDH = %d TDT = %d tail_pos = %d\n",
-        READ_MEM(state->dev, E1000E_TDH_OFFSET),
-        READ_MEM(state->dev, E1000E_TDT_OFFSET),
-        TXD_TAIL);
-  DEBUG("send pkt fn: transmit error %d\n",
-        TXD_STATUS(TXD_PREV_HEAD).ec | TXD_STATUS(TXD_PREV_HEAD).lc);
-  DEBUG("send pkt fn: txd cmd.rs = %d status.dd = %d\n",
-        TXD_CMD(TXD_PREV_HEAD).rs | TXD_STATUS(TXD_PREV_HEAD).dd);
-  DEBUG("send pkt fn: tpt total packet transmit: %d\n",
-        READ_MEM(state->dev, E1000E_TPT_OFFSET));
-  uint32_t status_pci = pci_cfg_readw(state->bus_num, state->dev_num,
-                                      0, E1000E_PCI_STATUS_OFFSET);
-  DEBUG("send pkt fn: status_pci 0x%04x int %d\n",
-        status_pci, status_pci & E1000E_PCI_STATUS_INT);
-  DEBUG("e1000e send packet fn: end --------------------\n");
+  /* DEBUG("send pkt fn: after moving tail TDH = %d TDT = %d tail_pos = %d\n", */
+  /*       READ_MEM(state->dev, E1000E_TDH_OFFSET), */
+  /*       READ_MEM(state->dev, E1000E_TDT_OFFSET), */
+  /*       TXD_TAIL); */
+  /* DEBUG("send pkt fn: transmit error %d\n", */
+  /*       TXD_STATUS(TXD_PREV_HEAD).ec | TXD_STATUS(TXD_PREV_HEAD).lc); */
+  /* DEBUG("send pkt fn: txd cmd.rs = %d status.dd = %d\n", */
+  /*       TXD_CMD(TXD_PREV_HEAD).rs | TXD_STATUS(TXD_PREV_HEAD).dd); */
+  /* DEBUG("send pkt fn: tpt total packet transmit: %d\n", */
+  /*       READ_MEM(state->dev, E1000E_TPT_OFFSET)); */
+  /* uint32_t status_pci = pci_cfg_readw(state->bus_num, state->dev_num, */
+  /*                                     0, E1000E_PCI_STATUS_OFFSET); */
+  /* DEBUG("send pkt fn: status_pci 0x%04x int %d\n", */
+  /*       status_pci, status_pci & E1000E_PCI_STATUS_INT); */
+  /* DEBUG("e1000e send packet fn: end --------------------\n"); */
   return 0;
 }
 
@@ -350,18 +350,18 @@ static int e1000e_receive_packet(uint8_t* buffer,
   
   RXD_ADDR(RXD_TAIL) = (uint64_t*) buffer;
   uint32_t icr_reg = READ_MEM(state->dev, E1000E_ICR_OFFSET);
-  DEBUG("e1000e receive pkt fn: interpret icr\n");  
-  e1000e_interpret_int(icr_reg);
+  // DEBUG("e1000e receive pkt fn: interpret icr\n");  
+  // e1000e_interpret_int(icr_reg);
   if(icr_reg & E1000E_ICR_RXO) {
-    DEBUG("e1000e receive pkt fn: resetting rxo\n");
+    // DEBUG("e1000e receive pkt fn: resetting rxo\n");
     WRITE_MEM(state->dev, E1000E_ICR_OFFSET, E1000E_ICR_RXO);
   }
   
   WRITE_MEM(state->dev, E1000E_RDT_OFFSET, RXD_INC(RXD_TAIL, 1));
   RXD_TAIL = RXD_INC(RXD_TAIL, 1);
   
-  DEBUG("e1000e receive pkt fn: after resetting RXO\n");
-  e1000e_interpret_icr(state);
+  // DEBUG("e1000e receive pkt fn: after resetting RXO\n");
+  // e1000e_interpret_icr(state);
   uint32_t ims_reg = READ_MEM(state->dev, E1000E_IMS_OFFSET);
   WRITE_MEM(state->dev, E1000E_IMS_OFFSET, ims_reg | E1000E_ICR_RXO);
   
@@ -373,7 +373,7 @@ static int e1000e_receive_packet(uint8_t* buffer,
   /* DEBUG("receive pkt fn: status_pci 0x%04x int %d\n", */
   /*       status_pci, status_pci & E1000E_PCI_STATUS_INT); */
   // e1000e_interpret_rxd(state);
-  DEBUG("e1000e receive pkt fn: end -----------------------\n");
+  // DEBUG("e1000e receive pkt fn: end -----------------------\n");
   return 0;
 }
 
@@ -427,8 +427,8 @@ static int e1000e_unmap_callback(struct e1000e_map_ring* map,
                                  uint64_t** callback,
                                  void** context) {
   // callback is a function pointer
-  DEBUG("unmap callback fn head_pos %d tail_pos %d\n",
-        map->head_pos, map->tail_pos);
+  /* DEBUG("unmap callback fn head_pos %d tail_pos %d\n", */
+  /*       map->head_pos, map->tail_pos); */
   if(map->head_pos == map->tail_pos) {
     // if there is an empty mapping ring buffer, do not unmap the callback
     ERROR("Try to unmap an empty queue\n");
@@ -436,42 +436,42 @@ static int e1000e_unmap_callback(struct e1000e_map_ring* map,
   }
 
   uint64_t i = map->head_pos;
-  DEBUG("unmap callback fn: before unmap head_pos %d tail_pos %d\n",
-        map->head_pos, map->tail_pos);  
+  /* DEBUG("unmap callback fn: before unmap head_pos %d tail_pos %d\n", */
+  /*       map->head_pos, map->tail_pos);   */
   // TODO(panitan)
   *callback = (uint64_t *) map->map_ring[i].callback;
   *context =  map->map_ring[i].context;
   map->map_ring[i].callback = NULL;
   map->map_ring[i].context = NULL;
   map->head_pos = (1 + map->head_pos) % map->ring_len;
-  DEBUG("unmap callback fn: callback 0x%p, context 0x%p\n",
-        *callback, *context);
-  DEBUG("end unmap callback fn: after unmap head_pos %d tail_pos %d\n",
-        map->head_pos, map->tail_pos);
+  /* DEBUG("unmap callback fn: callback 0x%p, context 0x%p\n", */
+  /*       *callback, *context); */
+  /* DEBUG("end unmap callback fn: after unmap head_pos %d tail_pos %d\n", */
+  /*       map->head_pos, map->tail_pos); */
   return 0;
 }
 
 static int e1000e_map_callback(struct e1000e_map_ring* map,
                                void (*callback)(nk_net_dev_status_t, void*),
                                void* context) {
-  DEBUG("map callback head_pos %d tail_pos %d\n", map->head_pos, map->tail_pos);
+  // DEBUG("map callback head_pos %d tail_pos %d\n", map->head_pos, map->tail_pos);
   if(map->head_pos == ((map->tail_pos + 1) % map->ring_len)) {
     // when the mapping callback queue is full
     ERROR("Callback mapping queue is full.\n");
     return -1;
   }
 
-  DEBUG("map callback fn: map head_pos: %d, tail_pos: %d\n",
-        map->head_pos, map->tail_pos);
+  /* DEBUG("map callback fn: map head_pos: %d, tail_pos: %d\n", */
+  /*       map->head_pos, map->tail_pos); */
   uint64_t i = map->tail_pos;
   struct e1000e_fn_map *fnmap = (map->map_ring + i);
   fnmap->callback = callback;
   fnmap->context = (uint64_t *)context;
   map->tail_pos = (1 + map->tail_pos) % map->ring_len;
-  DEBUG("map callback: callback 0x%p, context 0x%p\n",
-        callback, context);
-  DEBUG("end map callback fn: after map head_pos: %d, tail_pos: %d\n",
-        map->head_pos, map->tail_pos);
+  /* DEBUG("map callback: callback 0x%p, context 0x%p\n", */
+  /*       callback, context); */
+  /* DEBUG("end map callback fn: after map head_pos: %d, tail_pos: %d\n", */
+  /*       map->head_pos, map->tail_pos); */
   return 0;
 }
 
@@ -638,7 +638,6 @@ void e1000e_send() {
   uint8_t pkt_size = 30;
   uint8_t *pkt = malloc(30);
   e1000e_send_packet(pkt, pkt_size, dev_state);
-  
 }
 
 void e1000e_interpret_int_shell() {
@@ -674,12 +673,12 @@ int e1000e_post_send(void *state,
                      void *context) {
   // always map callback
   int result = 0;
-  DEBUG("post tx fn: callback 0x%p context 0x%p\n", callback, context);
+  // DEBUG("post tx fn: callback 0x%p context 0x%p\n", callback, context);
   result = e1000e_map_callback(((struct e1000e_state*)state)->tx_map, callback, context);
 
   if (!result)
     result = e1000e_send_packet(src, len, (struct e1000e_state*) state);
-  DEBUG("post tx fn: end\n");
+  // DEBUG("post tx fn: end\n");
   return result;
 }
 
@@ -691,9 +690,9 @@ int e1000e_post_receive(void *vstate,
   // mapping the callback always
   // if result != -1 receive packet
   struct e1000e_state* state = (struct e1000e_state*) vstate;
-  e1000e_interpret_icr(state);
+  // e1000e_interpret_icr(state);
   int result = 0;
-  DEBUG("post rx fn: callback 0x%p, context 0x%p\n", callback, context);
+  // DEBUG("post rx fn: callback 0x%p, context 0x%p\n", callback, context);
   result  = e1000e_map_callback(state->rx_map, callback, context);
 
   if(!result)
@@ -704,35 +703,35 @@ int e1000e_post_receive(void *vstate,
 
   /* DEBUG("post rx fn: status_pci 0x%04x int %d\n", */
   /*       status_pci, status_pci & E1000E_PCI_STATUS_INT); */
-  e1000e_interpret_icr(state);
-  e1000e_interpret_rxd(state);
-  DEBUG("post rx fn: end --------------------\n");
+  /* e1000e_interpret_icr(state); */
+  /* e1000e_interpret_rxd(state); */
+  /* DEBUG("post rx fn: end --------------------\n"); */
   return result;
 }
 
 static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   //  panic("within irq handler\n");
-  DEBUG("irq_handler fn: vector: 0x%x rip: 0x%p s: 0x%p\n",
-        vec, excp->rip, s);
+  /* DEBUG("irq_handler fn: vector: 0x%x rip: 0x%p s: 0x%p\n", */
+  /*       vec, excp->rip, s); */
   struct e1000e_state* state = s;
   uint32_t icr = READ_MEM(state->dev, E1000E_ICR_OFFSET);
   uint32_t ims = READ_MEM(state->dev, E1000E_IMS_OFFSET);
   uint32_t mask_int = icr & ims;
-  DEBUG("irq_handler fn: ICR: 0x%08x IMS: 0x%08x mask_int: 0x%08x\n",
-        icr, ims, mask_int);
+  /* DEBUG("irq_handler fn: ICR: 0x%08x IMS: 0x%08x mask_int: 0x%08x\n", */
+  /*       icr, ims, mask_int); */
   /* DEBUG("irq_handler fn: ICR: 0x%08x icr expects  zero.\n", */
   /*       READ_MEM(state->dev, E1000E_ICR_OFFSET)); */
-  DEBUG("irq_handler fn: interpret ICR\n");
-  e1000e_interpret_int(icr);
-  DEBUG("irq_handler fn: interpret IMS\n");
-  e1000e_interpret_int(ims);
+  /* DEBUG("irq_handler fn: interpret ICR\n"); */
+  /* e1000e_interpret_int(icr); */
+  /* DEBUG("irq_handler fn: interpret IMS\n"); */
+  /* e1000e_interpret_int(ims); */
   void (*callback)(nk_net_dev_status_t, void*) = NULL;
   void *context = NULL;
   nk_net_dev_status_t status = NK_NET_DEV_STATUS_SUCCESS;
 
   if(mask_int & E1000E_ICR_TXDW) {
     // transmit interrupt
-    DEBUG("irq_handler fn: handle the txdw interrupt\n");
+    // DEBUG("irq_handler fn: handle the txdw interrupt\n");
     e1000e_unmap_callback(state->tx_map,
                           (uint64_t **)&callback,
                           (void **)&context);
@@ -744,18 +743,18 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
 
     // update the head of the ring buffer
     TXD_PREV_HEAD = TXD_INC(1, TXD_PREV_HEAD);
-    DEBUG("irq_handler fn: total packet transmitted = %d\n",
-          READ_MEM(state->dev, E1000E_TPT_OFFSET));
+    /* DEBUG("irq_handler fn: total packet transmitted = %d\n", */
+    /*       READ_MEM(state->dev, E1000E_TPT_OFFSET)); */
   }
 
   if(mask_int & (E1000E_ICR_RXT0 | E1000E_ICR_RXO)) {
     // receive interrupt
     if(mask_int & E1000E_ICR_RXT0) {
-      DEBUG("irq_handler fn: handle the rxt0 interrupt\n");
+      // DEBUG("irq_handler fn: handle the rxt0 interrupt\n");
     }
 
     if(mask_int & E1000E_ICR_RXO) {
-      DEBUG("irq_handler fn: handle the rx0 interrupt\n");
+      // DEBUG("irq_handler fn: handle the rx0 interrupt\n");
     }
     
     e1000e_unmap_callback(state->rx_map,
@@ -763,7 +762,7 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
                           (void **)&context);
 
     uint32_t ims_reg = READ_MEM(state->dev, E1000E_IMS_OFFSET);
-    e1000e_interpret_ims(state);
+    // e1000e_interpret_ims(state);
     WRITE_MEM(state->dev, E1000E_IMC_OFFSET, E1000E_ICR_RXO);
     // DEBUG("irq handler: clear ims.rxo\n");
     // e1000e_interpret_ims(state);
@@ -777,15 +776,15 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
     RXD_PREV_HEAD = RXD_INC(1, RXD_PREV_HEAD);
     /* DEBUG("irq_handler fn: total packet received = %d\n", */
     /*       READ_MEM(state->dev, E1000E_TPR_OFFSET)); */
-    e1000e_read_stat(state);
+    // e1000e_read_stat(state);
   }
 
   if(callback) {
-    DEBUG("irq_handler fn: invoke callback function callback: 0x%p\n", callback);
+    // DEBUG("irq_handler fn: invoke callback function callback: 0x%p\n", callback);
     callback(status, context);
   }
 
-  DEBUG("irq_handler fn: end irq\n\n\n");
+  // DEBUG("irq_handler fn: end irq\n\n\n");
   // must have this line at the end of the handler
   IRQ_HANDLER_END();
   return 0;

@@ -37,7 +37,7 @@
 #include <nautilus/cpu.h>             // udelay
 #include <dev/e1000e_pci.h>           // e1000e_interpret_int
 
-#define DEBUG_ECHO 1
+#define DEBUG_ECHO 0 
 
 #ifndef DEBUG_ECHO
 #undef DEBUG_PRINT
@@ -64,6 +64,7 @@ uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 #define ETHERNET_TYPE_IPV4        0x0800         /* ethernet type ipv4 */
 #define ETHERNET_TYPE_IPX         0x8137         /* ethernet type ipx */
 #define ETHERNET_TYPE_IPV6        0x86dd         /* ethernet type ipv6 */
+#define ETHERNET_TYPE_RUNT        0x5555         /* ethernet runt packet */
 
 // ip packet
 // ip protocol
@@ -94,6 +95,7 @@ struct eth_header {
   uint8_t  src_mac[MAC_LEN];        /* source mac address */
   uint16_t eth_type;                /* ethernet type */
 } __packed;
+typedef struct eth_header eth_hdr_t;
 
 // IP header format
 //  0                   1                   2                   3
@@ -691,6 +693,21 @@ void send_arp_request_packet(uint8_t* pkt,
   DEBUG("finish sending arp request\n");  
 }
 
+int send_runt_packet(uint8_t* pkt_out,
+                     uint8_t* dst_mac, 
+                     uint8_t* src_mac,
+                     struct action_info* ai) {
+  create_eth_header(pkt_out, dst_mac, src_mac, ETHERNET_TYPE_RUNT);
+  print_eth_header((eth_hdr_t*) pkt_out);
+  DEBUG("sending a runt packet\n");
+  int res = nk_net_dev_send_packet(ai->netdev,
+                                   pkt_out,
+                                   sizeof(struct eth_header)+50,
+                                   NK_DEV_REQ_BLOCKING, 0, 0);
+  DEBUG("finish sending a runt packet\n");  
+  return res;
+}
+
 static void ai_thread(void *in, void **out) 
 {
   DEBUG("ai_thread function ------------------------------|\n");
@@ -712,82 +729,77 @@ static void ai_thread(void *in, void **out)
   uint64_t buffer_size = c.packet_size_to_buffer_size(c.max_tu);
   uint8_t* input_packet = malloc(buffer_size);
   uint8_t* output_packet = malloc(buffer_size);
+  memset(input_packet, 0, buffer_size);
+  memset(output_packet, 0, buffer_size);
+  
   DEBUG("ai_thread before while ------------------------------\n");
   uint8_t condition = true;
   struct eth_header *eth_hdr_in = (struct eth_header*) input_packet;
+  struct arp_header *arp_pkt_in = get_arp_header(input_packet);
+  struct ip_header *ip_hdr_in = get_ip_header(input_packet);
   while (condition) {
-    memset(input_packet, 0, buffer_size);
-    memset(output_packet, 0, buffer_size);
-    // wait to receive a packet - should check errors
-    // DEBUG("ai_thread: while receiving ------------------------------\n");
+    DEBUG("ai_thread: while receiving ------------------------------\n");
     nk_net_dev_receive_packet(ai->netdev, input_packet,
                               c.max_tu, NK_DEV_REQ_BLOCKING,0,0);
-    // dump_packet(input_packet, 24);
 
-    // if(input packet is an ARP packet its a request && it matches ai->ip_addr)
-    /* DEBUG("ETHERNET_TYPE_ARP: %d\n", */
-    /*       ntoh16(eth_hdr_in->eth_type) == ETHERNET_TYPE_ARP); */
-    /* DEBUG("if it is my packet ------------------------------\n"); */
-    /* DEBUG("compare broadcast %d\n", */
-    /*       compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC)); */
-    // DEBUG("ai_thread: compare dst %d\n", compare_mac(eth_hdr_in->dst_mac, c.mac));
-    if (compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) ||
-        compare_mac(eth_hdr_in->dst_mac, c.mac)) {
+    if (!compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) &&
+        !compare_mac(eth_hdr_in->dst_mac, c.mac)) {
+      continue;
+    }
 
-      struct ip_header *ip_hdr_in = get_ip_header(input_packet);
-      if (ntoh16(eth_hdr_in->eth_type) == ETHERNET_TYPE_ARP) {
-        struct arp_header *arp_pkt_in = get_arp_header(input_packet);
-        /* DEBUG("is it my ip %d\n", */
-        /*       ntoh32(arp_pkt_in->target_ip_addr) == ai->ip_addr); */
-        /* DEBUG("is it arp request %d\n", */
-        /*       ntoh16(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST); */
+    DEBUG("switch cases \n");
+    switch(ntoh16(eth_hdr_in->eth_type)) {
+      case ETHERNET_TYPE_RUNT: 
+        print_eth_header(eth_hdr_in);
+        send_runt_packet(output_packet, eth_hdr_in->src_mac, c.mac, ai);
+        break;
+
+      case ETHERNET_TYPE_ARP:
         // print_arp_packet(input_packet);
 
-        if ((ntoh32(arp_pkt_in->target_ip_addr) == ai->nk_ip_addr) &&
+        if((ntoh32(arp_pkt_in->target_ip_addr) == ai->nk_ip_addr) &&
             (ntoh16(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST)) {
           // DEBUG("arp matches\n");
           print_arp_short(input_packet);          
           send_arp_response_packet(input_packet, output_packet, c.mac, ai);
           DEBUG("send arp packet complete\n");
         }
-      } else if ((ntoh16(eth_hdr_in->eth_type) == ETHERNET_TYPE_IPV4) &&
-                 (ntoh32(ip_hdr_in->ip_dst) == ai->nk_ip_addr)) {
-
-        /* DEBUG("IP_PRO_ICMP: %d\n", ip_hdr_in->protocol == IP_PRO_ICMP); */
-        /* DEBUG("IP_PRO_UDP: %d\n", ip_hdr_in->protocol == IP_PRO_UDP); */
-        struct icmp_header* icmp_hdr_in = get_icmp_header(input_packet);
-        if ((ip_hdr_in->protocol == IP_PRO_ICMP) &&
-            (icmp_hdr_in->type == ICMP_ECHO_REQUEST)) {
-          send_icmp_packet(input_packet, output_packet, c.mac, ai);
-        } else if (ip_hdr_in->protocol == IP_PRO_UDP) {
-          print_udp_short(input_packet);
-          send_udp_packet(input_packet, output_packet, c.mac, ai);
-          if(ai->vc) {
-            char buf_mac[MAC_STRING_LEN];
-            char buf_ip[IP_STRING_LEN];
-            nk_vc_printf("the number of UDP packets left to receive: %d\n",
-                         ai->packet_num);
-            mac_inttostr(eth_hdr_in->src_mac, buf_mac, MAC_STRING_LEN);
-            nk_vc_printf("from MAC address: %s ", buf_mac);
-            ip_inttostr(ntoh32(ip_hdr_in->ip_src), buf_ip, IP_STRING_LEN);
-            nk_vc_printf("IP addres: %s\n", buf_ip);
-            nk_vc_printf("UDP data: %s\n", get_udp_data(input_packet));
-            nk_vc_printf("sending the packet back\n\n");
-            ai->packet_num -= 1;
-            DEBUG("packet_num %d\n", ai->packet_num);
-            if(ai->packet_num == 0) condition = false;
+      case ETHERNET_TYPE_IPV4:
+        if(ntoh32(ip_hdr_in->ip_dst) == ai->nk_ip_addr) {
+          struct icmp_header* icmp_hdr_in = get_icmp_header(input_packet);
+          if ((ip_hdr_in->protocol == IP_PRO_ICMP) &&
+              (icmp_hdr_in->type == ICMP_ECHO_REQUEST)) {
+            send_icmp_packet(input_packet, output_packet, c.mac, ai);
+          } else if (ip_hdr_in->protocol == IP_PRO_UDP) {
+            print_udp_short(input_packet);
+            send_udp_packet(input_packet, output_packet, c.mac, ai);
+            if(ai->vc) {
+              char buf_mac[MAC_STRING_LEN];
+              char buf_ip[IP_STRING_LEN];
+              nk_vc_printf("the number of UDP packets left to receive: %d\n",
+                  ai->packet_num);
+              mac_inttostr(eth_hdr_in->src_mac, buf_mac, MAC_STRING_LEN);
+              nk_vc_printf("from MAC address: %s ", buf_mac);
+              ip_inttostr(ntoh32(ip_hdr_in->ip_src), buf_ip, IP_STRING_LEN);
+              nk_vc_printf("IP addres: %s\n", buf_ip);
+              nk_vc_printf("UDP data: %s\n", get_udp_data(input_packet));
+              nk_vc_printf("sending the packet back\n\n");
+              ai->packet_num -= 1;
+              DEBUG("packet_num %d\n", ai->packet_num);
+              if(ai->packet_num == 0) condition = false;
+            }
           }
         }
-      }
     }
   }
   free(input_packet);
   free(output_packet);
 }
 
-void test_net_udp_echo(char* nic_name, char *ip, uint16_t port, uint32_t packet_num) 
-{
-  nk_vc_printf("Echoing %u UDP packets at address %s:%d\n", packet_num,ip,port);
+void test_net_udp_echo(char* nic_name, char *ip, uint16_t port, 
+                       uint32_t packet_num) {
+  nk_vc_printf("Echoing %u UDP packets at address %s:%d\n", 
+               packet_num,ip,port);
   struct action_info ai;
   ai.netdev = nk_net_dev_find(nic_name);
   if (!ai.netdev) {

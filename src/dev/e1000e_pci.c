@@ -945,8 +945,8 @@ int e1000e_pci_init(struct naut_info * naut) {
   uint32_t mac_high = READ_MEM(state->dev, E1000E_RAH_OFFSET);
   uint32_t mac_low = READ_MEM(state->dev, E1000E_RAL_OFFSET);
   uint64_t mac_all = ((uint64_t)mac_low+((uint64_t)mac_high<<32)) & 0xffffffffffff;
-  DEBUG("init fn: mac_all = 0x%lX\n", mac_all);
-  DEBUG("init fn: mac_high = 0x%x mac_low = 0x%x\n", mac_high, mac_low);
+  INFO("init fn: mac_all = 0x%lX\n", mac_all);
+  INFO("init fn: mac_high = 0x%x mac_low = 0x%x\n", mac_high, mac_low);
   uint64_t mac_64 = 0x00ffffffffffff & READ_MEM64(state->dev, E1000E_RAL_OFFSET);
   DEBUG("init fn: test READ_MEM64 0x%lX\n", mac_64);
 
@@ -977,21 +977,25 @@ int e1000e_pci_init(struct naut_info * naut) {
   DEBUG("init fn: e1000e status = 0x%08x\n", status_reg);
   DEBUG("init fn: does status.fd = 0x%01x? %s\n",
         E1000E_STATUS_FD, status_reg & E1000E_STATUS_FD ? "yes":"no");
-  DEBUG("init fn: status.speed 0x%02x\n",
-        (status_reg & E1000E_STATUS_SPEED_MASK) >> 6);
-  DEBUG("init fn: status.asdv 0x%02x\n",
-        (status_reg & E1000E_STATUS_ASDV_MASK) >> 8);
 
-  if(e1000e_interpret_speed((status_reg & E1000E_STATUS_SPEED_MASK) >> 6) !=
-     e1000e_interpret_speed((status_reg & E1000E_STATUS_ASDV_MASK) >> 8)) {
+  uint32_t status_speed = (status_reg & E1000E_STATUS_SPEED_MASK) >> 6;
+  status_speed = e1000e_interpret_speed(status_speed);
+  uint32_t status_asdv = (status_reg & E1000E_STATUS_ASDV_MASK) >> 8;
+  status_asdv = e1000e_interpret_speed(status_asdv);
+  INFO("init fn: status.speed 0x%02x\n", status_speed);
+  INFO("init fn: status.asdv 0x%02x\n", status_asdv);
+
+  if(status_speed != status_asdv) {
     ERROR("init fn: setting speed and detecting speed do not match!!!\n");
+    ERROR("init fn: status speed %d\n", status_speed); 
+    ERROR("init fn: status asdv %d\n", status_asdv);
   }
 
-  DEBUG("init fn: status.lu 0x%01x %s\n",
-        (status_reg & E1000E_STATUS_LU) >> 1,
-        (status_reg & E1000E_STATUS_LU) ? "link is up.":"link is down.");
-  DEBUG("init fn: status.phyra %s\n",
-        status_reg & E1000E_STATUS_PHYRA ? "1 PHY requires initialization": "0");
+  INFO("init fn: status.lu 0x%01x %s\n",
+      (status_reg & E1000E_STATUS_LU) >> 1,
+      (status_reg & E1000E_STATUS_LU) ? "link is up.":"link is down.");
+  INFO("init fn: status.phyra %s\n",
+      status_reg & E1000E_STATUS_PHYRA ? "1 PHY requires initialization": "0");
 
   DEBUG("init fn: init receive ring\n");
   e1000e_init_receive_ring(state);
@@ -1050,7 +1054,7 @@ int e1000e_pci_init(struct naut_info * naut) {
   e1000e_interpret_icr(state);
   DEBUG("init fn: finished writting ICR with 0xffffffff\n");
   DEBUG("init fn: end init fn --------------------\n");
-
+  DEBUG("init fn: date %s time %s\n", __DATE__, __TIME__);
   return 0;
 }
 

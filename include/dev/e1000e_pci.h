@@ -229,7 +229,10 @@
 #define E1000E_ICR_RXO               (1 << 6)   // receive overrun 
 #define E1000E_ICR_RXT0              (1 << 7)   // receiver timer interrupt 
 #define E1000E_ICR_TXD_LOW           (1 << 15)  // transmit descriptor low threshold hit 
-#define E1000E_ICR_SRPD              (1 << 16)  // small receive packet detected 
+#define E1000E_ICR_SRPD              (1 << 16)  // small receive packet detected
+#define E1000E_ICR_RXQ0              (1 << 20)  // receive queue 0 interrupt
+#define E1000E_ICR_RXQ1              (1 << 21)  // receive queue 1 interrupt
+#define E1000E_RFCTL_EXSTEN          (1 << 15)  // extended status enable
 #define E1000E_ICR_OTHER             (1 << 24)  // other interrupts
 #define E1000E_ICR_INT_ASSERTED      (1 << 31)  // interrupt asserted
 

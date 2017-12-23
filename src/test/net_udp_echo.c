@@ -37,7 +37,7 @@
 #include <nautilus/cpu.h>             // udelay
 #include <dev/e1000e_pci.h>           // e1000e_interpret_int
 
-#define DEBUG_ECHO 0 
+// #define DEBUG_ECHO 0 
 
 #ifndef DEBUG_ECHO
 #undef DEBUG_PRINT
@@ -198,6 +198,15 @@ static inline int compare_mac(uint8_t* mac1, uint8_t* mac2) {
   return ((mac1[0] == mac2[0]) && (mac1[1] == mac2[1]) && \
           (mac1[2] == mac2[2]) && (mac1[3] == mac2[3]) && \
           (mac1[4] == mac2[4]) && (mac1[5] == mac2[5]));
+}
+
+static int mac_strtoint(uint8_t* mac_int, char* mac_str) {
+  sint32_t temp[MAC_LEN];
+    if(MAC_LEN == sscanf(mac_str, "%02x:%02x:%02x_%02x:%02x:%02x*c", &temp[0], &temp[1], &temp[2], &temp[3], &temp[4], &temp[5])) {
+      memcpy(mac_int, temp, MAC_LEN); 
+      return 0;
+    }
+    return -1;
 }
 
 static void mac_inttostr(uint8_t *mac, char* buf, int len) {
@@ -702,14 +711,13 @@ int send_runt_packet(uint8_t* pkt_out,
   DEBUG("sending a runt packet\n");
   int res = nk_net_dev_send_packet(ai->netdev,
                                    pkt_out,
-                                   sizeof(struct eth_header)+50,
+                                   sizeof(struct eth_header),
                                    NK_DEV_REQ_BLOCKING, 0, 0);
   DEBUG("finish sending a runt packet\n");  
   return res;
 }
 
-static void ai_thread(void *in, void **out) 
-{
+static void ai_thread(void *in, void **out) {
   DEBUG("ai_thread function ------------------------------|\n");
   struct action_info* ai = (struct action_info *)in;
   DEBUG("ai = 0x%p\n", ai);
@@ -726,9 +734,14 @@ static void ai_thread(void *in, void **out)
   mac_inttostr(c.mac, buf, MAC_STRING_LEN);
   DEBUG("ai_thread: nautilus mac addr %s\n", buf);
 
+  INFO("c.max_tu = %d\n", c.max_tu);
   uint64_t buffer_size = c.packet_size_to_buffer_size(c.max_tu);
+  INFO("the size of allocated buffer: %d\n", buffer_size);
   uint8_t* input_packet = malloc(buffer_size);
   uint8_t* output_packet = malloc(buffer_size);
+  INFO("&input_packet 0x%p\n", input_packet);
+  INFO("&output_packet 0x%p\n", output_packet);
+
   memset(input_packet, 0, buffer_size);
   memset(output_packet, 0, buffer_size);
   
@@ -820,26 +833,79 @@ void test_net_arp_request(){
   struct action_info ai;
   ai.netdev = nk_net_dev_find("e1000e-0");
   if (!ai.netdev) {
-    DEBUG("Cannot find the \"%s\" from nk_net_dev\n", "e1000e-0");
+    DEBUG("cannot find the \"%s\" from nk_net_dev\n", "e1000e-0");
     return;
   }
   ai.nk_ip_addr = ip_strtoint("165.124.183.190");
   ai.dst_ip_addr = ip_strtoint("165.124.183.169");
-  nk_vc_printf("Sending %d ARP request back to 165.124.183.169 (r415-5)\n", 10);  
+  nk_vc_printf("sending %d arp request back to 165.124.183.169 (r415-5)\n", 10);  
   struct nk_net_dev_characteristics c;  
   nk_net_dev_get_characteristics(ai.netdev, &c);
   uint8_t* pkt = malloc(sizeof(struct arp_packet)+80);
   if(!pkt) {
-    DEBUG("Cannot allocate memory space for a packet\n");
+    DEBUG("cannot allocate memory space for a packet\n");
   }
   for(int i = 0; i < 10; i++) {
-    nk_vc_printf("Sending an ARP request %d\n", i);
+    nk_vc_printf("sending an arp request %d\n", i);
     send_arp_request_packet(pkt, c.mac, &ai);
     udelay(10000);
     e1000e_interpret_int_shell();   
   }
   free(pkt);
 }
+
+void test_net_runt_send() {
+  struct action_info ai;
+  ai.netdev = nk_net_dev_find("e1000e-0");
+  if (!ai.netdev) {
+    DEBUG("cannot find the \"%s\" from nk_net_dev\n", "e1000e-0");
+    return;
+  }
+  ai.nk_ip_addr = ip_strtoint("165.124.183.190");
+  ai.dst_ip_addr = ip_strtoint("165.124.183.169");
+  nk_vc_printf("sending %d runt packets to 165.124.183.169 (r415-5)\n", 10);  
+  struct nk_net_dev_characteristics c;  
+  nk_net_dev_get_characteristics(ai.netdev, &c);
+  uint8_t* pkt = malloc(sizeof(eth_hdr_t)+80);
+  if(!pkt) {
+    ERROR("cannot allocate memory space for a packet\n");
+  }
+
+  uint8_t dst_mac[MAC_LEN];
+  char* dst_mac_str ="68:05:ca_2d:a3:54";
+  mac_strtoint(dst_mac, "68:05:ca_2d:a3:54");
+  char mac_str[MAC_STRING_LEN];
+  mac_inttostr(dst_mac, mac_str, MAC_STRING_LEN); 
+  DEBUG("mac str %s mac int converted to string %s\n",
+        dst_mac_str, mac_str);
+  for(int i = 0; i < 10; i++) {
+    nk_vc_printf("sending a runt packet %d\n", i);
+    send_runt_packet(pkt, dst_mac, c.mac, &ai);
+    udelay(10000);
+    e1000e_interpret_int_shell();   
+  }
+  free(pkt);
+}
+
+// void test_start_runt_echo(char* nic_name, char* ip, uint16_t port,
+//                           uint32_t packet_num) {
+//   nk_vc_printf("Echoing %u UDP packets at address %s:%d\n", 
+//                packet_num,ip,port);
+//   struct action_info ai;
+//   ai.netdev = nk_net_dev_find(nic_name);
+//   if (!ai.netdev) {
+//     nk_vc_printf("Cannot find the \"%s\" from nk_net_dev\n", nic_name);
+//     return;
+//   }
+// 
+//   ai.nk_ip_addr = ip_strtoint(ip);
+//   ai.dst_ip_addr = 0;
+//   ai.port = port; // unused
+//   ai.nic_name = nic_name;
+//   ai.packet_num = packet_num;
+//   ai.vc = true;
+//   ai_thread((void*)&ai, NULL);
+// }
 
 /*
 

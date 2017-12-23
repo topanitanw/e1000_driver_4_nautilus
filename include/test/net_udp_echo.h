@@ -30,4 +30,5 @@
 
 void test_net_udp_echo(char* nic_name, char *ip, uint16_t port, uint32_t packet_num);
 void test_net_arp_request();
+void test_net_runt_send();
 #endif

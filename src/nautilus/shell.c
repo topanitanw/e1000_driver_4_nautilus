@@ -1104,6 +1104,10 @@ static int handle_cmd(char *buf, int n)
     test_net_arp_request();
   }
 
+  if(!strncasecmp(buf,"tx runt", 7)) {
+    test_net_runt_send();
+    return 0;
+  }
 #ifdef NAUT_CONFIG_PROFILE
   if (!strncasecmp(buf,"inst",4)) {
     handle_instrument(buf);

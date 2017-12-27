@@ -29,10 +29,10 @@
 #define __E1000E_PCI
 
 // Constant variables
-// These variables are configurable, and they will change the number of descriptors
-// and the packet buffer pointed by the descriptors.
+// These variables are configurable, and they will change the number of descriptors.
 // The number of descriptors is always a multiple of eight.
-#define TX_DSC_COUNT          16
+// both tx_dsc_count and rx_dsc_count should be multiple of 16.
+#define TX_DSC_COUNT          16      
 #define TX_BLOCKSIZE          256      // bytes available per DMA block
 #define RX_DSC_COUNT          16       // equal to DMA block count
 #define RX_BLOCKSIZE          256      // bytes available per DMA block
@@ -221,6 +221,7 @@
 #define E1000E_RECV_BSIZE_8192       8192
 #define E1000E_RECV_BSIZE_16384      16384
 #define E1000E_RECV_BSIZE_MAX        16384
+#define E1000E_RECV_BSIZE_MIN        E1000E_RECV_BSIZE_256
 
 // interrupt bits of icr register
 #define E1000E_ICR_TXDW              1          // transmit descriptor written back 
@@ -232,7 +233,8 @@
 #define E1000E_ICR_SRPD              (1 << 16)  // small receive packet detected
 #define E1000E_ICR_RXQ0              (1 << 20)  // receive queue 0 interrupt
 #define E1000E_ICR_RXQ1              (1 << 21)  // receive queue 1 interrupt
-#define E1000E_RFCTL_EXSTEN          (1 << 15)  // extended status enable
+#define E1000E_ICR_TXQ0              (1 << 22)  // transmit queue 0 interrupt
+#define E1000E_ICR_TXQ1              (1 << 23)  // transmit queue 1 interrupt
 #define E1000E_ICR_OTHER             (1 << 24)  // other interrupts
 #define E1000E_ICR_INT_ASSERTED      (1 << 31)  // interrupt asserted
 
@@ -356,7 +358,6 @@ void e1000e_legacy_int_off();
 void e1000e_legacy_int_on();
 int e1000e_pci_init(struct naut_info * naut);
 int e1000e_pci_deinit();
-void e1000e_send();
 void e1000e_interpret_int_shell();
 void e1000e_interpret_int(uint32_t);
 void e1000e_interpret_ims(struct e1000e_state*);

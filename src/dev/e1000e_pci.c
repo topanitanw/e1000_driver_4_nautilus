@@ -320,9 +320,9 @@ static int e1000e_receive_packet(uint8_t* buffer,
                                  struct e1000e_state *state) {
   DEBUG("e1000e receive packet fn: buffer = 0x%p, len = %lu\n",
         buffer, buffer_size);
-   DEBUG("e1000e receive pkt fn: before moving tail head: %d, tail: %d\n",
-         READ_MEM(state->dev, E1000E_RDH_OFFSET), 
-         READ_MEM(state->dev, E1000E_RDT_OFFSET)); 
+  DEBUG("e1000e receive pkt fn: before moving tail head: %d, tail: %d\n",
+        READ_MEM(state->dev, E1000E_RDH_OFFSET), 
+        READ_MEM(state->dev, E1000E_RDT_OFFSET)); 
   // if the buffer size is changed,
   // let the network adapter know the new buffer size
   if(state->rx_buffer_size != buffer_size) {
@@ -397,6 +397,10 @@ static int e1000e_receive_packet(uint8_t* buffer,
 }
 
 uint64_t e1000e_packet_size_to_buffer_size(uint64_t sz) {
+  if(sz < E1000E_RECV_BSIZE_MIN) {
+    // set the minimum packet size to 256 bytes
+    return E1000E_RECV_BSIZE_MIN;
+  }
   // Round up the number to the buffer size with power of two
   // In E1000E, the packet buffer is the power of two.
   // citation: https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
@@ -497,11 +501,15 @@ static int e1000e_map_callback(struct e1000e_map_ring* map,
 void e1000e_interpret_int(uint32_t int_reg) {
   if(int_reg & E1000E_ICR_TXDW) DEBUG("\t TXDW triggered\n");
   if(int_reg & E1000E_ICR_TXQE) DEBUG("\t TXQE triggered\n");
-  if(int_reg & E1000E_ICR_RXT0) DEBUG("\t RXT0 triggered\n");
   if(int_reg & E1000E_ICR_LSC)  DEBUG("\t LSC triggered\n");
-  if(int_reg & E1000E_ICR_RXO)  DEBUG("\t RXO triggered\n");
-  if(int_reg & E1000E_ICR_SRPD) DEBUG("\t SRPD triggered\n");
+  if(int_reg & E1000E_ICR_RXO)  DEBUG("\t RX0 triggered\n");
+  if(int_reg & E1000E_ICR_RXT0) DEBUG("\t RXT0 triggered\n");
   if(int_reg & E1000E_ICR_TXD_LOW) DEBUG("\t TXD_LOW triggered\n");
+  if(int_reg & E1000E_ICR_SRPD) DEBUG("\t SRPD triggered\n");
+  if(int_reg & E1000E_ICR_RXQ0) DEBUG("\t RXQ0 triggered\n");
+  if(int_reg & E1000E_ICR_RXQ1) DEBUG("\t RXQ1 triggered\n");
+  if(int_reg & E1000E_ICR_TXQ0) DEBUG("\t TXQ0 triggered\n");
+  if(int_reg & E1000E_ICR_TXQ1) DEBUG("\t TXQ1 triggered\n");
   if(int_reg & E1000E_ICR_OTHER) DEBUG("\t Other \n");
   if(int_reg & E1000E_ICR_INT_ASSERTED) DEBUG("\t INT_ASSERTED triggered\n");
   DEBUG("interpret int: end --------------------\n");    
@@ -653,14 +661,6 @@ uint32_t e1000e_interpret_speed(uint32_t status_speed) {
   return status_speed;
 }
 
-// CLEANUP
-void e1000e_send() {
-  uint8_t pkt_size = 30;
-  uint8_t *pkt = malloc(30);
-  e1000e_send_packet(pkt, pkt_size, dev_state);
-  
-}
-
 void e1000e_interpret_int_shell() {
   e1000e_interpret_icr(dev_state);
 }
@@ -697,8 +697,10 @@ int e1000e_post_send(void *state,
   DEBUG("post tx fn: callback 0x%p context 0x%p\n", callback, context);
   result = e1000e_map_callback(((struct e1000e_state*)state)->tx_map, callback, context);
 
-  if (!result)
+  if (!result) {
     result = e1000e_send_packet(src, len, (struct e1000e_state*) state);
+  }
+
   DEBUG("post tx fn: end\n");
   return result;
 }
@@ -776,7 +778,7 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
           READ_MEM(state->dev, E1000E_TPT_OFFSET));
   }
 
-  if(mask_int & (E1000E_ICR_RXT0 | E1000E_ICR_RXO)) {
+  if(mask_int & (E1000E_ICR_RXT0 | E1000E_ICR_RXO | E1000E_ICR_RXQ0)) {
     // receive interrupt
     if(mask_int & E1000E_ICR_RXT0) {
       DEBUG("irq_handler fn: handle the rxt0 interrupt\n");
@@ -1065,8 +1067,10 @@ int e1000e_pci_init(struct naut_info * naut) {
         E1000E_RDTR_FPD);
   WRITE_MEM(state->dev, E1000E_RADV_OFFSET, 0);
 
-  // enable only transmit descriptor written back and receive interrupt timer
-  WRITE_MEM(state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
+  // enable only transmit descriptor written back, receive interrupt timer
+  // rx queue 0
+  WRITE_MEM(state->dev, E1000E_IMS_OFFSET, 
+            E1000E_ICR_TXDW | E1000E_ICR_RXT0 | E1000E_ICR_RXQ0);
   e1000e_interpret_ims(state);
   // after the interrupt is turned on, the interrupt handler is called
   // due to the transmit descriptor queue empty.

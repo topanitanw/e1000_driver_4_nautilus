@@ -36,8 +36,9 @@
 #include <nautilus/vc.h>              // nk_vc_printf
 #include <nautilus/cpu.h>             // udelay
 #include <dev/e1000e_pci.h>           // e1000e_interpret_int
+#include <nautilus/cpu.h>             // rdtsc 
 
-// #define DEBUG_ECHO 0 
+// #define DEBUG_ECHO 1
 
 #ifndef DEBUG_ECHO
 #undef DEBUG_PRINT
@@ -57,6 +58,12 @@ uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 #define MAC_STRING_LEN            25             /* size of a string format of a mac address */
 /* a string format of a mac address xx:xx:xx_xx:xx:xx\0 */
 #define IP_STRING_LEN             17             /* size of a string format of an ip address */
+#define MAC_R4154_E1000E          "68:05:CA:2D:A4:10"
+#define MAC_R4155_E1000E          "68:05:CA:2D:A3:54"
+
+#define MACHINE_NO_R4154          4
+#define MACHINE_NO_R4155          5
+
 /* a string format of an ip address xxx.xxx.xxx.xxx\0 */
 
 // ethernet frame
@@ -96,6 +103,12 @@ struct eth_header {
   uint16_t eth_type;                /* ethernet type */
 } __packed;
 typedef struct eth_header eth_hdr_t;
+
+struct runt_header {
+  eth_hdr_t eth_hdr;
+  uint32_t data;
+} __packed;
+typedef struct runt_header runt_hdr_t;
 
 // IP header format
 //  0                   1                   2                   3
@@ -182,11 +195,11 @@ struct udp_packet {
   uint8_t data;
 } __packed;
 
-
 struct action_info {
   struct nk_net_dev *netdev;
   uint32_t nk_ip_addr;
   uint32_t dst_ip_addr;
+  uint8_t dst_mac[MAC_LEN];
   uint16_t port;
   char* nic_name;
   uint32_t packet_num;
@@ -202,11 +215,16 @@ static inline int compare_mac(uint8_t* mac1, uint8_t* mac2) {
 
 static int mac_strtoint(uint8_t* mac_int, char* mac_str) {
   sint32_t temp[MAC_LEN];
-    if(MAC_LEN == sscanf(mac_str, "%02x:%02x:%02x_%02x:%02x:%02x*c", &temp[0], &temp[1], &temp[2], &temp[3], &temp[4], &temp[5])) {
-      memcpy(mac_int, temp, MAC_LEN); 
-      return 0;
+  if(MAC_LEN == sscanf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x*c", 
+                       &temp[0], &temp[1], &temp[2], &temp[3], &temp[4], &temp[5])) {
+    
+    for(uint8_t i = 0; i < MAC_LEN; i++) {
+      mac_int[i] = temp[i];
     }
-    return -1;
+
+    return 0;
+  }
+  return -1;
 }
 
 static void mac_inttostr(uint8_t *mac, char* buf, int len) {
@@ -471,6 +489,7 @@ static void print_eth_header(struct eth_header* pkt) {
   }
 }
 
+
 static void print_arp_header(struct arp_header* pkt) {
   DEBUG("arp packet ------------------------------\n");
   uint16_t host16 = ntoh16(pkt->hw_type);
@@ -711,7 +730,7 @@ int send_runt_packet(uint8_t* pkt_out,
   DEBUG("sending a runt packet\n");
   int res = nk_net_dev_send_packet(ai->netdev,
                                    pkt_out,
-                                   sizeof(struct eth_header),
+                                   sizeof(runt_hdr_t),
                                    NK_DEV_REQ_BLOCKING, 0, 0);
   DEBUG("finish sending a runt packet\n");  
   return res;
@@ -755,16 +774,18 @@ static void ai_thread(void *in, void **out) {
     nk_net_dev_receive_packet(ai->netdev, input_packet,
                               c.max_tu, NK_DEV_REQ_BLOCKING,0,0);
 
-    if (!compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) &&
-        !compare_mac(eth_hdr_in->dst_mac, c.mac)) {
+    if(!compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) &&
+       !compare_mac(eth_hdr_in->dst_mac, c.mac)) {
       continue;
     }
 
     DEBUG("switch cases \n");
     switch(ntoh16(eth_hdr_in->eth_type)) {
       case ETHERNET_TYPE_RUNT: 
+        DEBUG("received a runt packet and print its eth header\n");
         print_eth_header(eth_hdr_in);
         send_runt_packet(output_packet, eth_hdr_in->src_mac, c.mac, ai);
+        ai->packet_num -= 1;
         break;
 
       case ETHERNET_TYPE_ARP:
@@ -777,6 +798,7 @@ static void ai_thread(void *in, void **out) {
           send_arp_response_packet(input_packet, output_packet, c.mac, ai);
           DEBUG("send arp packet complete\n");
         }
+        break;
       case ETHERNET_TYPE_IPV4:
         if(ntoh32(ip_hdr_in->ip_dst) == ai->nk_ip_addr) {
           struct icmp_header* icmp_hdr_in = get_icmp_header(input_packet);
@@ -797,14 +819,15 @@ static void ai_thread(void *in, void **out) {
               nk_vc_printf("IP addres: %s\n", buf_ip);
               nk_vc_printf("UDP data: %s\n", get_udp_data(input_packet));
               nk_vc_printf("sending the packet back\n\n");
-              ai->packet_num -= 1;
               DEBUG("packet_num %d\n", ai->packet_num);
-              if(ai->packet_num == 0) condition = false;
             }
+            ai->packet_num -= 1;
           }
         }
-    }
-  }
+        break;
+    } // switch
+    if(ai->packet_num == 0) condition = false;
+  } // while
   free(input_packet);
   free(output_packet);
 }
@@ -829,13 +852,14 @@ void test_net_udp_echo(char* nic_name, char *ip, uint16_t port,
   ai_thread((void*)&ai, NULL);
 }
 
-void test_net_arp_request(){
+void test_net_send_arp_request(){
   struct action_info ai;
   ai.netdev = nk_net_dev_find("e1000e-0");
   if (!ai.netdev) {
     DEBUG("cannot find the \"%s\" from nk_net_dev\n", "e1000e-0");
     return;
   }
+
   ai.nk_ip_addr = ip_strtoint("165.124.183.190");
   ai.dst_ip_addr = ip_strtoint("165.124.183.169");
   nk_vc_printf("sending %d arp request back to 165.124.183.169 (r415-5)\n", 10);  
@@ -845,6 +869,7 @@ void test_net_arp_request(){
   if(!pkt) {
     DEBUG("cannot allocate memory space for a packet\n");
   }
+
   for(int i = 0; i < 10; i++) {
     nk_vc_printf("sending an arp request %d\n", i);
     send_arp_request_packet(pkt, c.mac, &ai);
@@ -854,7 +879,7 @@ void test_net_arp_request(){
   free(pkt);
 }
 
-void test_net_runt_send() {
+void test_net_send_runt() {
   struct action_info ai;
   ai.netdev = nk_net_dev_find("e1000e-0");
   if (!ai.netdev) {
@@ -887,77 +912,112 @@ void test_net_runt_send() {
   free(pkt);
 }
 
-// void test_start_runt_echo(char* nic_name, char* ip, uint16_t port,
-//                           uint32_t packet_num) {
-//   nk_vc_printf("Echoing %u UDP packets at address %s:%d\n", 
-//                packet_num,ip,port);
-//   struct action_info ai;
-//   ai.netdev = nk_net_dev_find(nic_name);
-//   if (!ai.netdev) {
-//     nk_vc_printf("Cannot find the \"%s\" from nk_net_dev\n", nic_name);
-//     return;
-//   }
-// 
-//   ai.nk_ip_addr = ip_strtoint(ip);
-//   ai.dst_ip_addr = 0;
-//   ai.port = port; // unused
-//   ai.nic_name = nic_name;
-//   ai.packet_num = packet_num;
-//   ai.vc = true;
-//   ai_thread((void*)&ai, NULL);
-// }
+static void start_runt_echo(void* in, void** out) {
+  DEBUG("start runt echo function\n");
+  if(!in) return;
 
-/*
+  struct action_info* info = (struct action_info*) in;
+  INFO("info = &0x%p, pkt_num = %d\n", in, info->packet_num); 
 
-static int arp_init(struct naut_info * naut) {
-  DEBUG("arp init ========================================\n");
-  struct action_info *ai = malloc(sizeof(*ai));
-  if (!ai) {
-    ERROR("Cannot allocate ai action_info\n");
-    return -1;
-  }
-  // search for the device in netdev
-  ai->netdev = nk_net_dev_find(NIC_NAME);
-  if (!ai->netdev) {
-    ERROR("Cannot find the \"e1000-0\" ethernet adapter from nk_net_dev\n");
-    return -1;
+  struct nk_net_dev_characteristics dev_char;
+  nk_net_dev_get_characteristics(info->netdev, &dev_char);
+
+  INFO("max tu = %d\n", 1500);
+  uint64_t bufsz = dev_char.packet_size_to_buffer_size(1500);
+  INFO("buffer size = %d\n", bufsz);
+
+  uint8_t* input_buf = malloc(bufsz);
+  uint8_t* output_buf = malloc(bufsz);
+
+  if(!input_buf || !output_buf) { 
+    ERROR("input_buf = &0x%p, output_buf = &0x%p\n", input_buf, output_buf);
+    if(input_buf) free(input_buf);
+    if(output_buf) free(output_buf);
+    return;
   }
 
-  ai->ip_addr = ip_strtoint(IP_ADDRESS_STRING);
-  ai->vc = false;
-  char buf[20];
-  memset(buf,0, sizeof(buf));
-  // test the ip_inttostr function
-  ip_inttostr(ai->ip_addr, buf, 20);
-  DEBUG("ip address string: %s, ip address uint32_t: 0x%08x, string: %s\n",
-        IP_ADDRESS_STRING, ai->ip_addr, buf);
-  DEBUG("nk_thread_start ========================================\n");
-  nk_thread_id_t tid;
-  if (nk_thread_start(arp_thread, (void*)ai , NULL, 1, PAGE_SIZE_4KB, &tid, 1)) {
-    free(ai);
-    return -1;
-  } else {
-    return 0;
+  memset(input_buf, 0, bufsz);
+  memset(output_buf, 0, bufsz);
+
+  uint32_t pkt_recv_num = 0;
+  uint64_t rtt_total = 0;
+  runt_hdr_t* runt_pkt_in = (runt_hdr_t*) input_buf;
+  INFO("before while loop\n");
+  while(pkt_recv_num < info->packet_num) {
+    uint64_t rtt_start = rdtsc();
+    send_runt_packet(output_buf, info->dst_mac, dev_char.mac, info); 
+
+    uint8_t recv_runt = false;
+    while(!recv_runt) {
+      nk_net_dev_receive_packet(info->netdev, input_buf,
+                                dev_char.max_tu, NK_DEV_REQ_BLOCKING,0,0);
+      if(runt_pkt_in->eth_hdr.eth_type == ETHERNET_TYPE_RUNT ||
+         compare_mac(runt_pkt_in->eth_hdr.dst_mac, dev_char.mac)) {
+        recv_runt = true;
+        pkt_recv_num++;
+      }
+    } 
+
+    uint64_t rtt_end = rdtsc();
+    uint64_t rtt_temp = rtt_end - rtt_start;
+    rtt_total += rtt_temp;
+
+    DEBUG("printing input packet\n");
+    print_eth_header(&(runt_pkt_in->eth_hdr));
+    INFO("pkt_no |%u| rtt |%u| total_rtt |%u|\n",
+         pkt_recv_num, rtt_temp, rtt_total);
   }
+
+  free(input_buf);
+  free(output_buf);
+  return;
 }
 
-static int arp_deinit() {
-  INFO("deinited\n");
+static int select_dst_mac(uint32_t machine_no, uint8_t* dst_mac) {
+  char* dst_mac_char = NULL;
+  switch(machine_no) {
+    case MACHINE_NO_R4154:  
+      dst_mac_char = MAC_R4154_E1000E;
+      break;
+    case MACHINE_NO_R4155:
+      dst_mac_char = MAC_R4155_E1000E;
+      break;
+    default:
+      ERROR("unknown machine number %d\n", machine_no);
+      return -1;
+  }
+  INFO("dst_mac %s\n", dst_mac_char);
+  mac_strtoint(dst_mac, dst_mac_char);
   return 0;
 }
 
-*/
+void test_net_start_runt(char* nic_name, uint32_t machine_no, uint32_t packet_num) {
+  INFO("Starting %u runt packets at %s devices to this %d machine\n", 
+       packet_num, nic_name, machine_no);
+  struct action_info ai;
+  ai.netdev = nk_net_dev_find(nic_name);
+  if (!ai.netdev) {
+    nk_vc_printf("Cannot find the \"%s\" from nk_net_dev\n", nic_name);
+    return;
+  }
 
-/* Show the ip address of the machine
- *
- */
-/*
-static void nk_hostnamei() {
-  char* net_dev_name = NULL;
-#ifdef NAUT_CONFIG_E1000_PCI
-  // net_dev_name = "e1000-0";
-  nk_vc_printf("%s\n", IP_ADDRESS_STRING);
-#endif
+  ai.nk_ip_addr = 0;
+  ai.dst_ip_addr = 0;
+  
+  if(select_dst_mac(machine_no, ai.dst_mac)) {
+    ERROR("select_dst_mac machine_no %d\n", machine_no);
+    return;
+  }
+
+  ai.port = 0; // unused
+  ai.nic_name = nic_name;
+  ai.packet_num = packet_num;
+  ai.vc = true;
+  INFO("calling start runt echo\n");
+  start_runt_echo((void*)&ai, NULL);
+  INFO("returning to the shell\n");
+  return;
 }
 
-*/
+
+

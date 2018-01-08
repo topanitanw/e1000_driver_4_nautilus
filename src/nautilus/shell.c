@@ -1049,7 +1049,12 @@ static int handle_cmd(char *buf, int n)
     nk_vc_printf("test threads|groups|stop|iso|bdwgc|pdsgc|\n");
     nk_vc_printf("     udp_echo nic ip port num|...\n");
     nk_vc_printf("vm name [embedded image]\n");
+    nk_vc_printf("start runt 4/5 number_of_packet\n");
     nk_vc_printf("run path\n");
+    return 0;
+  }
+
+  if(!strncasecmp(buf, "cancel", 6)) {
     return 0;
   }
 
@@ -1075,17 +1080,34 @@ static int handle_cmd(char *buf, int n)
   }
 
   if(!strncasecmp(buf,"echo", 4)) {
-    uint8_t subnet = 0;
+    uint32_t subnet = 190;
+    uint32_t pkt_num = 10;
     // note, the ip is the nautilus' ip
-    if(sscanf(buf,"echo %u", &subnet)==1) {
-      nk_vc_printf("test udp_echo e1000e-0 165.124.183.%d 5000 10\n", subnet);
-      memset(buf, 0, MAX_CMD);
-      sprintf(buf, "test udp_echo e1000e-0 165.124.183.%d 5000 10\n", subnet);
+    if(sscanf(buf,"echo %u %u", &subnet, &pkt_num)==2) {
+      nk_vc_printf("test udp_echo e1000e-0 165.124.183.%u 5000 %u\n", subnet, pkt_num);
+    } else if(sscanf(buf,"echo %u", &subnet)==1) {
+      nk_vc_printf("test udp_echo e1000e-0 165.124.183.%u 5000 10\n", subnet);
     } else { 
-      nk_vc_printf("test udp_echo e1000e-0 165.124.183.190 5000 10\n");
-      memset(buf, 0, MAX_CMD);      
-      sprintf(buf, "test udp_echo e1000e-0 165.124.183.190 5000 10\n");
+      nk_vc_printf("test udp_echo e1000e-0 165.124.183.190 5000 1000\n");
+      subnet = 190;
+      pkt_num = 1000;
     }
+    memset(buf, 0, MAX_CMD);
+    sprintf(buf, "test udp_echo e1000e-0 165.124.183.%u 5000 %u\n", subnet, pkt_num);
+  }
+
+  if(!strncasecmp(buf, "start runt", 10)) {
+    uint32_t num_pkt = 500;
+    uint32_t machine_no = 0;
+    if(sscanf(buf, "start runt %u %u", &machine_no, &num_pkt) != 2) {
+      num_pkt = 500;
+      machine_no = 4;
+    }
+
+    nk_vc_printf("start sending %d runt packets to machine %d\n", 
+        num_pkt, machine_no);
+    test_net_start_runt("e1000e-0", machine_no, num_pkt);
+    return 0;
   }
 
   if(!strncasecmp(buf,"reset all int", 13)) {
@@ -1101,13 +1123,40 @@ static int handle_cmd(char *buf, int n)
   }
 
   if(!strncasecmp(buf,"tx arp", 6)) {
-    test_net_arp_request();
+    test_net_send_arp_request();
   }
 
   if(!strncasecmp(buf,"tx runt", 7)) {
-    test_net_runt_send();
+    test_net_send_runt();
     return 0;
   }
+
+  if(!strncasecmp(buf,"tx psp", 6)) {
+    e1000e_enable_psp_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"tx no psp", 9)) {
+    e1000e_disable_psp_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"set srpd", 8)) {
+    uint32_t size = 0;
+    if(sscanf(buf, "set srpd %u", &size) != 1) {
+      size = 19;
+    }
+    e1000e_enable_srpd_int_shell(size);
+    nk_vc_printf("set srpd\n");
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"reset srpd", 10)) {
+    e1000e_disable_srpd_int_shell();
+    nk_vc_printf("reset srpd\n");
+    return 0;
+  }
+
 #ifdef NAUT_CONFIG_PROFILE
   if (!strncasecmp(buf,"inst",4)) {
     handle_instrument(buf);

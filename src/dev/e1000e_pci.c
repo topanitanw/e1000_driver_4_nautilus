@@ -145,12 +145,14 @@ static int e1000e_init_transmit_ring(struct e1000e_state *state) {
         READ_MEM(state->dev, E1000E_TDLEN_OFFSET),
         READ_MEM(state->dev, E1000E_TDH_OFFSET),
         READ_MEM(state->dev, E1000E_TDT_OFFSET));
+  
   // TCTL Reg: EN = 1b, PSP = 1b, CT = 0x0f (16d), COLD = 0x3F (63d)
-  WRITE_MEM(state->dev, E1000E_TCTL_OFFSET,
-            E1000E_TCTL_EN | E1000E_TCTL_PSP | E1000E_TCTL_CT | E1000E_TCTL_COLD_FD);
+  uint32_t tctl_reg = E1000E_TCTL_EN | E1000E_TCTL_PSP | E1000E_TCTL_CT | E1000E_TCTL_COLD_FD;
+  WRITE_MEM(state->dev, E1000E_TCTL_OFFSET, tctl_reg);
   DEBUG("init tx fn: TCTL = 0x%08x expects 0x%08x\n",
-        READ_MEM(state->dev, E1000E_TCTL_OFFSET),
-        E1000E_TCTL_EN | E1000E_TCTL_PSP | E1000E_TCTL_CT | E1000E_TCTL_COLD_FD);
+        READ_MEM(state->dev, E1000E_TCTL_OFFSET), 
+        tctl_reg);
+
   // TXDCTL Reg: set WTHRESH = 1b, GRAN = 1b,
   // other fields = 0b except bit 22th = 1b
   WRITE_MEM(state->dev, E1000E_TXDCTL_OFFSET,
@@ -357,8 +359,8 @@ static int e1000e_receive_packet(uint8_t* buffer,
     state->rx_buffer_size = buffer_size;
   }
 
-  DEBUG("disable receive\n");
-  e1000e_disable_receive(state);
+  // DEBUG("disable receive\n");
+  // e1000e_disable_receive(state);
   RXD_PREV_HEAD = READ_MEM(state->dev, E1000E_RDH_OFFSET);
   RXD_TAIL = READ_MEM(state->dev, E1000E_RDT_OFFSET);
   memset(((struct e1000e_rx_desc *)RXD_RING_BUFFER + TXD_TAIL),
@@ -390,8 +392,8 @@ static int e1000e_receive_packet(uint8_t* buffer,
   DEBUG("receive pkt fn: status_pci 0x%04x int %d\n",
          status_pci, status_pci & E1000E_PCI_STATUS_INT);
   e1000e_interpret_rxd(state);
-  DEBUG("enable receive\n");
-  e1000e_enable_receive(state);
+  // DEBUG("enable receive\n");
+  // e1000e_enable_receive(state);
   DEBUG("e1000e receive pkt fn: end -----------------------\n");
   return 0;
 }
@@ -542,19 +544,21 @@ void e1000e_read_stat(struct e1000e_state* state){
   DEBUG("total octets transmitted %d\n", temp64);
 
   DEBUG("receive error count %d\n",
-        READ_MEM(state->dev, E1000E_RXERRC_OFFSET));
+      READ_MEM(state->dev, E1000E_RXERRC_OFFSET));
   DEBUG("receive no buffer count %d\n",
-        READ_MEM(state->dev, E1000E_RNBC_OFFSET));
+      READ_MEM(state->dev, E1000E_RNBC_OFFSET));
   DEBUG("good packet receive count %d\n",
-        READ_MEM(state->dev, E1000E_GPRC_OFFSET));
+      READ_MEM(state->dev, E1000E_GPRC_OFFSET));
   DEBUG("good packet transmitted count %d\n",
-        READ_MEM(state->dev, E1000E_GPTC_OFFSET));
+      READ_MEM(state->dev, E1000E_GPTC_OFFSET));
   DEBUG("collision count %d\n",
-        READ_MEM(state->dev, E1000E_COLC_OFFSET));
+      READ_MEM(state->dev, E1000E_COLC_OFFSET));
+  DEBUG("receive length error %d\n", 
+      READ_MEM(state->dev, E1000E_RLEC_OFFSET));
   DEBUG("receive undersize count %d\n",
-        READ_MEM(state->dev, E1000E_RUC_OFFSET));
+      READ_MEM(state->dev, E1000E_RUC_OFFSET));
   DEBUG("receive oversize count %d\n",
-        READ_MEM(state->dev, E1000E_ROC_OFFSET));
+      READ_MEM(state->dev, E1000E_ROC_OFFSET));
 }
 
 void e1000e_disable_all_int() {
@@ -686,7 +690,6 @@ void e1000e_interpret_rxd(struct e1000e_state* state) {
 void e1000e_interpret_rxd_shell() {
   e1000e_interpret_rxd(dev_state);
 }
-  
 int e1000e_post_send(void *state,
                      uint8_t *src,
                      uint64_t len,
@@ -713,7 +716,6 @@ int e1000e_post_receive(void *vstate,
   // mapping the callback always
   // if result != -1 receive packet
   struct e1000e_state* state = (struct e1000e_state*) vstate;
-  e1000e_interpret_icr(state);
   int result = 0;
   DEBUG("post rx fn: callback 0x%p, context 0x%p\n", callback, context);
   result = e1000e_map_callback(state->rx_map, callback, context);
@@ -722,20 +724,6 @@ int e1000e_post_receive(void *vstate,
     result = e1000e_receive_packet(src, len, state);
   }
 
-  uint32_t status_pci = pci_cfg_readw(state->bus_num, state->dev_num,
-                                      0, E1000E_PCI_STATUS_OFFSET);
-
-  DEBUG("post rx fn: 1 status_pci 0x%04x int %d\n",
-        status_pci, status_pci & E1000E_PCI_STATUS_INT);
-
-  status_pci = pci_cfg_readw(state->bus_num, state->dev_num,
-                             0, E1000E_PCI_STATUS_OFFSET);
-
-  DEBUG("post rx fn: 2 status_pci 0x%04x int %d\n",
-        status_pci, status_pci & E1000E_PCI_STATUS_INT);
-
-  e1000e_interpret_icr(state);
-  e1000e_interpret_rxd(state);
   DEBUG("post rx fn: end --------------------\n");
   return result;
 }
@@ -750,8 +738,6 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   uint32_t mask_int = icr & ims;
   DEBUG("irq_handler fn: ICR: 0x%08x IMS: 0x%08x mask_int: 0x%08x\n",
         icr, ims, mask_int);
-  /* DEBUG("irq_handler fn: ICR: 0x%08x icr expects  zero.\n", */
-  /*       READ_MEM(state->dev, E1000E_ICR_OFFSET)); */
   DEBUG("irq_handler fn: interpret ICR\n");
   e1000e_interpret_int(icr);
   DEBUG("irq_handler fn: interpret IMS\n");
@@ -760,7 +746,7 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   void *context = NULL;
   nk_net_dev_status_t status = NK_NET_DEV_STATUS_SUCCESS;
 
-  if(mask_int & E1000E_ICR_TXDW) {
+  if(mask_int & (E1000E_ICR_TXDW | E1000E_ICR_TXQ0)) {
     // transmit interrupt
     DEBUG("irq_handler fn: handle the txdw interrupt\n");
     e1000e_unmap_callback(state->tx_map,
@@ -795,8 +781,7 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
     uint32_t ims_reg = READ_MEM(state->dev, E1000E_IMS_OFFSET);
     e1000e_interpret_ims(state);
     WRITE_MEM(state->dev, E1000E_IMC_OFFSET, E1000E_ICR_RXO);
-    // DEBUG("irq handler: clear ims.rxo\n");
-    // e1000e_interpret_ims(state);
+    
     // checking errors
     if(RXD_ERRORS(RXD_PREV_HEAD)) {
       ERROR("irq_handler fn: receive an error packet\n");
@@ -1070,7 +1055,7 @@ int e1000e_pci_init(struct naut_info * naut) {
   // enable only transmit descriptor written back, receive interrupt timer
   // rx queue 0
   WRITE_MEM(state->dev, E1000E_IMS_OFFSET, 
-            E1000E_ICR_TXDW | E1000E_ICR_RXT0 | E1000E_ICR_RXQ0);
+            E1000E_ICR_TXDW | E1000E_ICR_TXQ0 | E1000E_ICR_RXT0 | E1000E_ICR_RXQ0);
   e1000e_interpret_ims(state);
   // after the interrupt is turned on, the interrupt handler is called
   // due to the transmit descriptor queue empty.
@@ -1090,5 +1075,130 @@ int e1000e_pci_init(struct naut_info * naut) {
 int e1000e_pci_deinit() {
   INFO("deinited\n");
   return 0;
+}
+
+// debugging functions 
+static void e1000e_enable_psp(struct e1000e_state* state) {
+  uint32_t tctl_reg = READ_MEM(state->dev, E1000E_TCTL_OFFSET);
+  WRITE_MEM(state->dev, E1000E_TCTL_OFFSET, tctl_reg | E1000E_TCTL_PSP);
+  tctl_reg = READ_MEM(state->dev, E1000E_TCTL_OFFSET);
+  INFO("%s tctl psp %s\n", __func__, tctl_reg & E1000E_TCTL_PSP ? "on" : "off");
+  return;
+}
+
+static void e1000e_disable_psp(struct e1000e_state* state) {
+  uint32_t tctl_reg = READ_MEM(state->dev, E1000E_TCTL_OFFSET);
+  WRITE_MEM(state->dev, E1000E_TCTL_OFFSET, tctl_reg & ~E1000E_TCTL_PSP);
+  tctl_reg = READ_MEM(state->dev, E1000E_TCTL_OFFSET);
+  INFO("%s tctl psp %s\n", __func__, tctl_reg & E1000E_TCTL_PSP ? "on" : "off");
+  return;
+}
+
+void e1000e_enable_psp_shell() {
+  e1000e_enable_psp(dev_state);
+  return;
+}
+
+void e1000e_disable_psp_shell() {
+  e1000e_disable_psp(dev_state);
+  return;
+}
+
+static void e1000e_enable_srpd_int(struct e1000e_state* state, uint32_t size) {
+  WRITE_MEM(state->dev, E1000E_RSRPD_OFFSET, E1000E_RSPD_MASK & size);
+  INFO("RSRPD 0x%04X\n", READ_MEM(state->dev, E1000E_RSRPD_OFFSET));
+
+  uint32_t ims_reg = READ_MEM(state->dev, E1000E_IMS_OFFSET);
+  WRITE_MEM(state->dev, E1000E_IMS_OFFSET, ims_reg | E1000E_ICR_SRPD); 
+  ims_reg = READ_MEM(state->dev, E1000E_IMS_OFFSET);
+  INFO("%s ims_reg & SRPD %s\n", __func__, ims_reg & E1000E_ICR_SRPD ? "on" : "off"); 
+  return;
+}
+
+static void e1000e_disable_srpd_int(struct e1000e_state* state) {
+  WRITE_MEM(state->dev, E1000E_RSRPD_OFFSET, 0);
+  INFO("RSRPD 0x%04X\n", READ_MEM(state->dev, E1000E_RSRPD_OFFSET));
+
+  WRITE_MEM(state->dev, E1000E_IMC_OFFSET, E1000E_ICR_SRPD); 
+  uint32_t ims_reg = READ_MEM(state->dev, E1000E_IMS_OFFSET);
+  INFO("%s ims_reg & SRPD %s\n", __func__, ims_reg & E1000E_ICR_SRPD ? "on" : "off"); 
+  return;
+}
+
+void e1000e_enable_srpd_int_shell(uint32_t size) {
+  e1000e_enable_srpd_int(dev_state, size);
+  return;
+}
+
+void e1000e_disable_srpd_int_shell() {
+  e1000e_disable_srpd_int(dev_state);
+  return;
+}
+
+//TODO
+void e1000e_interpret_rctl(struct e1000e_state* state) {
+  uint32_t rctl_reg = READ_MEM(state->dev, E1000E_RCTL_OFFSET);
+  INFO("TCTL (Transmit ctrl register\n");
+  INFO("\tReceiver:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_EN ? "enabled" : "disabled");
+  INFO("\tStore bad packets:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_SBP ? "enabled" : "disabled");
+  INFO("\tUnicast promicuous:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_UPE ? "enabled" : "disabled");
+  INFO("\tMulticast promicuous:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_MPE ? "enabled" : "disabled");
+  INFO("\tLong packet:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_LPE ? "enabled" : "disabled");
+  
+  uint32_t rdmts = rctl_reg & E1000E_RCTL_RDMTS_MASK;
+  switch(rdmts) {
+    case E1000E_RCTL_RDMTS_HALF:
+      INFO("\tDescriptor minimum threshold size:\t\t1/2\n");
+      break;
+    case E1000E_RCTL_RDMTS_QUARTER:
+      INFO("\tDescriptor minimum threshold size:\t\t1/4\n");
+      break;
+    case E1000E_RCTL_RDMTS_EIGHTH:
+      INFO("\tDescriptor minimum threshold size:\t\t1/8\n");
+      break;
+  }
+
+  INFO("\tBroadcast accept mode:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_BAM ? "accept" : "does't accept");
+  INFO("\tVLAN filter:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_VFE ? "enabled" : "disabled");
+  INFO("\tPass MAC control frames:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_PMCF ? "pass" : "doesn't pass");
+  INFO("\tDiscard pause frames:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_DPF ? "enabled" : "disabled");
+  INFO("\tStrip Ethernet CRC:\t\t%s\n", 
+      rctl_reg & E1000E_RCTL_SECRC ? "strip" : "does't strip");
+
+  return;
+}
+
+void e1000e_interpret_rctl_shell() {
+  e1000e_interpret_rctl(dev_state);
+  return;
+}
+
+
+void e1000e_interpret_tctl(struct e1000e_state* state) {
+  uint32_t tctl_reg = READ_MEM(state->dev, E1000E_TCTL_OFFSET);
+  INFO("TCTL (Transmit ctrl register\n");
+  INFO("\tTransmitter:\t\t%s\n", 
+      tctl_reg & E1000E_TCTL_EN ? "enabled" : "disabled");
+  INFO("\tPad short packets:\t\t%s\n", 
+      tctl_reg & E1000E_TCTL_PSP ? "enabled" : "disabled");
+  INFO("\tSoftware XOFF Transmission:\t\t%s\n", 
+      tctl_reg & E1000E_TCTL_SWXOFF ? "enabled" : "disabled");
+  INFO("\tRe-trasmit on late collision:\t\t%s\n", 
+      tctl_reg & E1000E_TCTL_RTLC ? "enabled" : "disabled");
+  return;
+}
+
+void e1000e_interpret_tctl_shell() {
+  e1000e_interpret_tctl(dev_state);
+  return;
 }
 

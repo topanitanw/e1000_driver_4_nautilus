@@ -114,6 +114,7 @@
 #define E1000E_GPRC_OFFSET    0x04074  // good packets receive count
 #define E1000E_GPTC_OFFSET    0x04080  // good packets transmit count
 #define E1000E_COLC_OFFSET    0x04028  // collision count
+#define E1000E_RLEC_OFFSET    0x04040  // receive length error
 #define E1000E_RUC_OFFSET     0x040A4  // receive under size count
 #define E1000E_ROC_OFFSET     0x040AC  // receive over size count
 
@@ -154,10 +155,19 @@
 #define E1000E_TCTL_EN               (1 << 1)    // transmit enable
 #define E1000E_TCTL_PSP              (1 << 3)    // pad short packet
 #define E1000E_TCTL_CT               (0x0f << 4) // collision threshold
+#define E1000E_TCTL_CT_SHIFT         4
+#define E1000E_TCTL_COLD_SHIFT       12
 // collision distance full duplex 0x03f, 
 #define E1000E_TCTL_COLD_FD          (0x03f << 12)
 // collision distance half duplex 0x1ff 
 #define E1000E_TCTL_COLD_HD          (0x1ff << 12)
+#define E1000E_TCTL_SWXOFF           22
+#define E1000E_TCTL_PBE              23
+#define E1000E_TCTL_RTLC             24
+#define E1000E_TCTL_UNORTX           25
+#define E1000E_TCTL_TXDSCMT_SHIFT    26
+#define E1000E_TCTL_MULR             28
+#define E1000E_TCTL_RRTHRESH         29
 
 // E1000E Transmit Descriptor Control
 //// granularity thresholds unit 0b cache line, 1b descriptors
@@ -178,11 +188,13 @@
 #define E1000E_RCTL_LPE              (1 << 5)    // Long Packet Reception Enable
 #define E1000E_RCTL_LBM_NONE         (0 << 6)    // No Loopback
 #define E1000E_RCTL_LBM_PHY          (3 << 6)    // PHY or external SerDesc loopback
+#define E1000E_RCTL_RDMTS_SHIFT      8           // left shift count 
+#define E1000E_RCTL_RDMTS_MASK       (3 << 8)    // mask rdmts
 #define E1000E_RCTL_RDMTS_HALF       (0 << 8)    // Free Buffer Threshold is 1/2 of RDLEN
 #define E1000E_RCTL_RDMTS_QUARTER    (1 << 8)    // Free Buffer Threshold is 1/4 of RDLEN
 #define E1000E_RCTL_RDMTS_EIGHTH     (2 << 8)    // Free Buffer Threshold is 1/8 of RDLEN
 #define E1000E_RCTL_DTYP_LEGACY      (0 << 10)   // legacy descriptor type
-#define E1000E_RCTL_DTYP_PACKET_SPLIT (1 << 10)   // packet split descriptor type
+#define E1000E_RCTL_DTYP_PACKET_SPLIT (1 << 10)  // packet split descriptor type
 #define E1000E_RCTL_MO_36            (0 << 12)   // Multicast Offset - bits 47:36
 #define E1000E_RCTL_MO_35            (1 << 12)   // Multicast Offset - bits 46:35
 #define E1000E_RCTL_MO_34            (2 << 12)   // Multicast Offset - bits 45:34
@@ -239,6 +251,8 @@
 #define E1000E_ICR_INT_ASSERTED      (1 << 31)  // interrupt asserted
 
 #define E1000E_RDTR_FPD              (1 << 31)  // flush partial descriptor block
+
+#define E1000E_RSPD_MASK             ((uint32_t) (4095))  // 
 
 // new type declaration
 struct e1000e_dev {
@@ -367,4 +381,8 @@ void e1000e_reset_all_int();
 void e1000e_reset_rxo();
 void e1000e_interpret_rxd(struct e1000e_state*);
 void e1000e_interpret_rxd_shell();
+void e1000e_enable_psp_shell();
+void e1000e_disable_psp_shell();
+void e1000e_enable_srpd_int_shell(uint32_t size);
+void e1000e_disable_srpd_int_shell();
 #endif

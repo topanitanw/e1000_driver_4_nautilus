@@ -28,6 +28,8 @@
 #ifndef __E1000E_PCI
 #define __E1000E_PCI
 
+
+#define OPTIMIZE_LATENCY      1
 // Constant variables
 // These variables are configurable, and they will change the number of descriptors.
 // The number of descriptors is always a multiple of eight.
@@ -177,7 +179,9 @@
 
 // IPG = inter packet gap
 #define E1000E_TIPG_IPGT             0x08          // IPG transmit time
+#define E1000E_TIPG_IPGR1_SHIFT      10
 #define E1000E_TIPG_IPGR1            (0x2 << 10)   // TIPG1 = 2
+#define E1000E_TIPG_IPGR2_SHIFT      20
 #define E1000E_TIPG_IPGR2            (0xa << 20)   // TIPG2 = 10
 
 // E1000E Receive Control Register 
@@ -385,4 +389,7 @@ void e1000e_enable_psp_shell();
 void e1000e_disable_psp_shell();
 void e1000e_enable_srpd_int_shell(uint32_t size);
 void e1000e_disable_srpd_int_shell();
+void e1000e_interpret_rctl_shell();
+void e1000e_interpret_tctl_shell();
+
 #endif

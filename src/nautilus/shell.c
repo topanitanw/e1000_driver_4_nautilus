@@ -1157,6 +1157,17 @@ static int handle_cmd(char *buf, int n)
     return 0;
   }
 
+  if(!strncasecmp(buf,"read tctl", 9)) {
+    e1000e_interpret_tctl_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"read rctl", 9)) {
+    e1000e_interpret_rctl_shell();
+    return 0;
+  }
+
+
 #ifdef NAUT_CONFIG_PROFILE
   if (!strncasecmp(buf,"inst",4)) {
     handle_instrument(buf);

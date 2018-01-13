@@ -91,6 +91,19 @@ inline void WRITE_MEM64(struct e1000e_dev* dev, uint64_t offset, uint64_t val) {
   (*(volatile uint64_t*)(dev->mem_start+offset)) = val;
 }
 
+static void e1000e_set_tipg(struct e1000e_state* state,
+                            uint32_t ipgt,
+                            uint32_t ipgr1,
+                            uint32_t ipgr2) {
+  uint32_t tipg_reg = ipgt;
+  tipg_reg |= (ipgr1 << E1000E_TIPG_IPGR1_SHIFT);
+  tipg_reg |= (ipgr2 << E1000E_TIPG_IPGR2_SHIFT);
+  WRITE_MEM(state->dev, E1000E_TIPG_OFFSET, tipg_reg);
+  DEBUG("e1000e_set_tipg fn: tipg 0x08x\n",
+        READ_MEM(state->dev, E1000E_TIPG_OFFSET));
+  return; 
+}
+
 // initialize ring buffer to hold transmit descriptors
 static int e1000e_init_transmit_ring(struct e1000e_state *state) {
   TXMAP = malloc(sizeof(struct e1000e_map_ring));
@@ -157,14 +170,19 @@ static int e1000e_init_transmit_ring(struct e1000e_state *state) {
   // other fields = 0b except bit 22th = 1b
   WRITE_MEM(state->dev, E1000E_TXDCTL_OFFSET,
             E1000E_TXDCTL_GRAN | E1000E_TXDCTL_WTHRESH | (1<<22));
-  // write tipg regsiter
+  // write tipg register
   // 00,00 0000 0110,0000 0010 00,00 0000 1010 = 0x0060200a
   // will be zero when emulating hardware
-  WRITE_MEM(state->dev, E1000E_TIPG_OFFSET,
-            E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
-  DEBUG("init tx fn: TIPG = 0x%08x expects 0x%08x\n",
-        READ_MEM(state->dev, E1000E_TIPG_OFFSET),
-        E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
+  if(OPTIMIZE_LATENCY) {
+    // from page 348
+    e1000e_set_tipg(state, 6, 8, 6);
+  } else {
+    WRITE_MEM(state->dev, E1000E_TIPG_OFFSET,
+              E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
+    DEBUG("init tx fn: TIPG = 0x%08x expects 0x%08x\n",
+          READ_MEM(state->dev, E1000E_TIPG_OFFSET),
+          E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
+  }
   return 0;
 }
 
@@ -233,8 +251,13 @@ static int e1000e_init_receive_ring(struct e1000e_state *state) {
         READ_MEM(state->dev, E1000E_RXDCTL_OFFSET),
         E1000E_RXDCTL_GRAN | E1000E_RXDCTL_WTHRESH);
   // write rctl register specifing the receive mode
-  uint32_t rctl_reg = E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_PMCF | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048;
-
+  uint32_t rctl_reg = 0;
+  if(OPTIMIZE_LATENCY) {
+    rctl_reg = E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048 | E1000E_RCTL_SECRC;
+  } else {
+    rctl_reg = E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_PMCF | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048;
+  }
+   
   // receive buffer threshold and size
   /* DEBUG("init rx fn: rctl_reg = 0x%08x, expected value: 0x%08x\n", */
   /*       rctl_reg, 0x0083832e); */
@@ -369,7 +392,7 @@ static int e1000e_receive_packet(uint8_t* buffer,
   RXD_ADDR(RXD_TAIL) = (uint64_t*) buffer;
   uint32_t icr_reg = READ_MEM(state->dev, E1000E_ICR_OFFSET);
   DEBUG("e1000e receive pkt fn: interpret icr 0x%08x\n", icr_reg);  
-  e1000e_interpret_int(icr_reg);
+  e1000e_interpret_int(state, icr_reg);
   if(icr_reg & E1000E_ICR_RXO) {
     DEBUG("e1000e receive pkt fn: resetting rxo\n");
     WRITE_MEM(state->dev, E1000E_ICR_OFFSET, E1000E_ICR_RXO);
@@ -500,14 +523,17 @@ static int e1000e_map_callback(struct e1000e_map_ring* map,
   return 0;
 }
 
-void e1000e_interpret_int(uint32_t int_reg) {
+void e1000e_interpret_int(struct e1000e_state* state, uint32_t int_reg) {
   if(int_reg & E1000E_ICR_TXDW) DEBUG("\t TXDW triggered\n");
   if(int_reg & E1000E_ICR_TXQE) DEBUG("\t TXQE triggered\n");
   if(int_reg & E1000E_ICR_LSC)  DEBUG("\t LSC triggered\n");
   if(int_reg & E1000E_ICR_RXO)  DEBUG("\t RX0 triggered\n");
   if(int_reg & E1000E_ICR_RXT0) DEBUG("\t RXT0 triggered\n");
   if(int_reg & E1000E_ICR_TXD_LOW) DEBUG("\t TXD_LOW triggered\n");
-  if(int_reg & E1000E_ICR_SRPD) DEBUG("\t SRPD triggered\n");
+  if(int_reg & E1000E_ICR_SRPD) {
+    DEBUG("\t SRPD triggered\n");
+    DEBUG("\t RSRPD.size %u\n", READ_MEM(state->dev, E1000E_RSRPD_OFFSET));
+  }
   if(int_reg & E1000E_ICR_RXQ0) DEBUG("\t RXQ0 triggered\n");
   if(int_reg & E1000E_ICR_RXQ1) DEBUG("\t RXQ1 triggered\n");
   if(int_reg & E1000E_ICR_TXQ0) DEBUG("\t TXQ0 triggered\n");
@@ -520,143 +546,13 @@ void e1000e_interpret_int(uint32_t int_reg) {
 void e1000e_interpret_ims(struct e1000e_state* state) {
   uint32_t ims_reg = READ_MEM(state->dev, E1000E_IMS_OFFSET);
   DEBUG("interpret ims: IMS 0x%08x\n", ims_reg);
-  e1000e_interpret_int(ims_reg);  
+  e1000e_interpret_int(state, ims_reg);  
 }
 
 void e1000e_interpret_icr(struct e1000e_state* state) {
   uint32_t icr_reg = READ_MEM(state->dev, E1000E_ICR_OFFSET);
   DEBUG("interpret icr: ICR 0x%08x\n", icr_reg);
-  e1000e_interpret_int(icr_reg);
-}
-
-void e1000e_read_stat(struct e1000e_state* state){
-  DEBUG("total packet transmitted %d\n", READ_MEM(state->dev, E1000E_TPT_OFFSET));
-  DEBUG("total packet received %d\n", READ_MEM(state->dev, E1000E_TPR_OFFSET));
-  uint64_t temp64 = 0;
-  // this tor register must be read using two independent 32-bit accesses.
-  temp64 = READ_MEM(state->dev, E1000E_TORL_OFFSET);
-  temp64 |= (((uint64_t) READ_MEM(state->dev, E1000E_TORH_OFFSET)) << 32);
-  DEBUG("total octets received %d\n", temp64);
-
-  // this tot register must be read using two independent 32-bit accesses.
-  temp64 = READ_MEM(state->dev, E1000E_TOTL_OFFSET);
-  temp64 |= (((uint64_t) READ_MEM(state->dev, E1000E_TOTH_OFFSET)) << 32);
-  DEBUG("total octets transmitted %d\n", temp64);
-
-  DEBUG("receive error count %d\n",
-      READ_MEM(state->dev, E1000E_RXERRC_OFFSET));
-  DEBUG("receive no buffer count %d\n",
-      READ_MEM(state->dev, E1000E_RNBC_OFFSET));
-  DEBUG("good packet receive count %d\n",
-      READ_MEM(state->dev, E1000E_GPRC_OFFSET));
-  DEBUG("good packet transmitted count %d\n",
-      READ_MEM(state->dev, E1000E_GPTC_OFFSET));
-  DEBUG("collision count %d\n",
-      READ_MEM(state->dev, E1000E_COLC_OFFSET));
-  DEBUG("receive length error %d\n", 
-      READ_MEM(state->dev, E1000E_RLEC_OFFSET));
-  DEBUG("receive undersize count %d\n",
-      READ_MEM(state->dev, E1000E_RUC_OFFSET));
-  DEBUG("receive oversize count %d\n",
-      READ_MEM(state->dev, E1000E_ROC_OFFSET));
-}
-
-void e1000e_disable_all_int() {
-  WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
-  DEBUG("disable all int fn: end --------------------\n");
-  return;
-}
-
-void e1000e_trigger_int() {
-  // imc is a written only register.
-  DEBUG("trigger int fn: reset all ints by writing to IMC with 0xffffffff\n");
-  WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
-  // enable only transmit descriptor written back and receive interrupt timer
-  DEBUG("trigger int fn: set IMS with TXDW RXT0\n");
-  WRITE_MEM(dev_state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
-
-  if ((E1000E_ICR_TXDW | E1000E_ICR_RXT0) != READ_MEM(dev_state->dev, E1000E_IMS_OFFSET)) {
-    ERROR("trigger int fn: the written and read values of IMS reg do not match\n");
-    return;
-  }
-  // after the interrupt is turned on, the interrupt handler is called
-  // due to the transmit descriptor queue empty.
-  // set an interrupt on ICS register
-  // ICS is w reg which means its value cannot be read back.
-  DEBUG("trigger int fn: writing to ICS reg\n");
-  WRITE_MEM(dev_state->dev, E1000E_ICS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
-  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
-                                      0, E1000E_PCI_STATUS_OFFSET);
-  DEBUG("trigger int fn: status_pci 0x%04x int %d\n",
-        status_pci, status_pci & E1000E_PCI_STATUS_INT);
-  DEBUG("trigger int fn: end -------------------- \n");
-  return;
-}
-
-void e1000e_trigger_int_num(uint32_t int_num) {
-  // imc is a written only register.
-  WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
-  // enable only transmit descriptor written back and receive interrupt timer
-  WRITE_MEM(dev_state->dev, E1000E_IMS_OFFSET, int_num);
-  if (int_num != READ_MEM(dev_state->dev, E1000E_IMS_OFFSET)) {
-    ERROR("IMS reg: the written and read values do not match\n");
-    return;
-  }
-  // after the interrupt is turned on, the interrupt handler is called
-  // due to the transmit descriptor queue empty.
-  // set an interrupt on ICS register
-  WRITE_MEM(dev_state->dev, E1000E_ICS_OFFSET, int_num);
-
-  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
-                                      0, E1000E_PCI_STATUS_OFFSET);
-  DEBUG("trigger int num fn: status_pci 0x%04x int %d\n",
-        status_pci, status_pci & E1000E_PCI_STATUS_INT);
-  DEBUG("trigger int num fn: end -------------------- \n");
-  return;
-}
-
-void e1000e_legacy_int_off() {
-  uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN | E1000E_PCI_CMD_INT_DISABLE;
-  DEBUG("legacy int off fn: pci cmd: 0x%04x\n", pci_cmd);
-  pci_cfg_writew(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET, pci_cmd);
-  DEBUG("legacy int off fn: pci_cmd 0x%04x expects  0x%04x\n",
-        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
-                      0, E1000E_PCI_CMD_OFFSET),
-        pci_cmd);
-  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
-                                      0, E1000E_PCI_STATUS_OFFSET);
-  DEBUG("legacy int off fn: status_pci 0x%04x int %d\n",
-        status_pci, status_pci & E1000E_PCI_STATUS_INT);
-  DEBUG("legacy int off fn: end -------------------- \n");
-  return;
-}
-
-void e1000e_legacy_int_on() {
-  uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN;
-  DEBUG("legacy int on: pci cmd: 0x%04x\n", pci_cmd);
-  pci_cfg_writew(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET, pci_cmd);
-  DEBUG("legacy int on: pci_cmd 0x%04x expects  0x%04x\n",
-        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
-                      0, E1000E_PCI_CMD_OFFSET),
-        pci_cmd);
-  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
-                                      0, E1000E_PCI_STATUS_OFFSET);
-  DEBUG("legacy int on fn: status_pci 0x%04x int %d\n",
-        status_pci, status_pci & E1000E_PCI_STATUS_INT);
-  DEBUG("legacy int on: end --------------------\n");
-  return;
-}
-
-void e1000e_reset_all_int() {
-  e1000e_interpret_icr(dev_state);
-  WRITE_MEM(dev_state->dev, E1000E_ICR_OFFSET, 0xffffffff);
-  e1000e_interpret_icr(dev_state);
-}
-
-void e1000e_reset_rxo() {
-  e1000e_interpret_icr(dev_state);
-  WRITE_MEM(dev_state->dev, E1000E_ICR_OFFSET, E1000E_ICR_RXO);
-  e1000e_interpret_icr(dev_state);
+  e1000e_interpret_int(state, icr_reg);
 }
 
 uint32_t e1000e_interpret_speed(uint32_t status_speed) {
@@ -665,31 +561,6 @@ uint32_t e1000e_interpret_speed(uint32_t status_speed) {
   return status_speed;
 }
 
-void e1000e_interpret_int_shell() {
-  e1000e_interpret_icr(dev_state);
-}
-
-void e1000e_read_stat_shell() {
-  e1000e_read_stat(dev_state);
-}
-
-void e1000e_interpret_rxd(struct e1000e_state* state) {
-  DEBUG("interpret rxd: head %d tail %d\n",
-        READ_MEM(state->dev, E1000E_RDH_OFFSET),
-        READ_MEM(state->dev, E1000E_RDT_OFFSET));
-  
-  uint64_t* data_addr = RXD_ADDR(RXD_PREV_HEAD);
-  DEBUG("interpret rxd: data buffer addr: 0x%p\n", data_addr);
-  DEBUG("interpret rxd: data length: %d\n", RXD_LENGTH(RXD_PREV_HEAD));
-  DEBUG("interpret rxd: status: 0x%02x dd: %d\n",
-        RXD_STATUS(RXD_PREV_HEAD),
-        RXD_STATUS(RXD_PREV_HEAD).dd);
-  DEBUG("interpret rxd: error: 0x%02x\n", RXD_ERRORS(RXD_PREV_HEAD));
-}
-
-void e1000e_interpret_rxd_shell() {
-  e1000e_interpret_rxd(dev_state);
-}
 int e1000e_post_send(void *state,
                      uint8_t *src,
                      uint64_t len,
@@ -739,9 +610,9 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   DEBUG("irq_handler fn: ICR: 0x%08x IMS: 0x%08x mask_int: 0x%08x\n",
         icr, ims, mask_int);
   DEBUG("irq_handler fn: interpret ICR\n");
-  e1000e_interpret_int(icr);
+  e1000e_interpret_int(state, icr);
   DEBUG("irq_handler fn: interpret IMS\n");
-  e1000e_interpret_int(ims);
+  e1000e_interpret_int(state, ims);
   void (*callback)(nk_net_dev_status_t, void*) = NULL;
   void *context = NULL;
   nk_net_dev_status_t status = NK_NET_DEV_STATUS_SUCCESS;
@@ -773,7 +644,9 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
     if(mask_int & E1000E_ICR_RXO) {
       DEBUG("irq_handler fn: handle the rx0 interrupt\n");
     }
-    
+   
+    // INFO("rx length %d\n", RXD_LENGTH(RXD_PREV_HEAD));
+
     e1000e_unmap_callback(state->rx_map,
                           (uint64_t **)&callback,
                           (void **)&context);
@@ -792,7 +665,7 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
     RXD_PREV_HEAD = RXD_INC(1, RXD_PREV_HEAD);
     /* DEBUG("irq_handler fn: total packet received = %d\n", */
     /*       READ_MEM(state->dev, E1000E_TPR_OFFSET)); */
-    e1000e_read_stat(state);
+    // e1000e_read_stat(state);
   }
 
   if(callback) {
@@ -981,8 +854,15 @@ int e1000e_pci_init(struct naut_info * naut) {
   WRITE_MEM(state->dev, E1000E_FCAH_OFFSET, 0);
   WRITE_MEM(state->dev, E1000E_FCT_OFFSET, 0);
 
-  // uint32_t ctrl_reg = (E1000E_CTRL_FD | E1000E_CTRL_FRCSPD | E1000E_CTRL_FRCDPLX | E1000E_CTRL_SLU | E1000E_CTRL_SPEED_1G) & ~E1000E_CTRL_ILOS; // p50 manual
-  uint32_t ctrl_reg = E1000E_CTRL_SLU | E1000E_CTRL_RFCE | E1000E_CTRL_TFCE;
+  // uint32_t ctrl_reg = (E1000E_CTRL_FD | E1000E_CTRL_FRCSPD | E1000E_CTRL_FRCDPLX | E1000E_CTRL_SLU | E1000E_CTRL_SPEED_1G) & ~E1000E_CTRL_ILOS;
+  // p50 manual
+  uint32_t ctrl_reg = 0;
+  if(OPTIMIZE_LATENCY) {
+    ctrl_reg = E1000E_CTRL_SLU;
+  } else {
+    ctrl_reg = E1000E_CTRL_SLU | E1000E_CTRL_RFCE | E1000E_CTRL_TFCE;
+  }
+  
   WRITE_MEM(state->dev, E1000E_CTRL_OFFSET, ctrl_reg);
 
   DEBUG("init fn: e1000e ctrl = 0x%08x expects 0x%08x\n",
@@ -1135,10 +1015,9 @@ void e1000e_disable_srpd_int_shell() {
   return;
 }
 
-//TODO
 void e1000e_interpret_rctl(struct e1000e_state* state) {
   uint32_t rctl_reg = READ_MEM(state->dev, E1000E_RCTL_OFFSET);
-  INFO("TCTL (Transmit ctrl register\n");
+  INFO("RCTL (Receive Ctrl Register)\n");
   INFO("\tReceiver:\t\t%s\n", 
       rctl_reg & E1000E_RCTL_EN ? "enabled" : "disabled");
   INFO("\tStore bad packets:\t\t%s\n", 
@@ -1182,10 +1061,9 @@ void e1000e_interpret_rctl_shell() {
   return;
 }
 
-
 void e1000e_interpret_tctl(struct e1000e_state* state) {
   uint32_t tctl_reg = READ_MEM(state->dev, E1000E_TCTL_OFFSET);
-  INFO("TCTL (Transmit ctrl register\n");
+  INFO("TCTL (Transmit Ctrl Register)\n");
   INFO("\tTransmitter:\t\t%s\n", 
       tctl_reg & E1000E_TCTL_EN ? "enabled" : "disabled");
   INFO("\tPad short packets:\t\t%s\n", 
@@ -1202,3 +1080,158 @@ void e1000e_interpret_tctl_shell() {
   return;
 }
 
+void e1000e_interpret_int_shell() {
+  e1000e_interpret_icr(dev_state);
+}
+
+void e1000e_interpret_rxd(struct e1000e_state* state) {
+  DEBUG("interpret rxd: head %d tail %d\n",
+        READ_MEM(state->dev, E1000E_RDH_OFFSET),
+        READ_MEM(state->dev, E1000E_RDT_OFFSET));
+  
+  uint64_t* data_addr = RXD_ADDR(RXD_PREV_HEAD);
+  DEBUG("interpret rxd: data buffer addr: 0x%p\n", data_addr);
+  DEBUG("interpret rxd: data length: %d\n", RXD_LENGTH(RXD_PREV_HEAD));
+  DEBUG("interpret rxd: status: 0x%02x dd: %d\n",
+        RXD_STATUS(RXD_PREV_HEAD),
+        RXD_STATUS(RXD_PREV_HEAD).dd);
+  DEBUG("interpret rxd: error: 0x%02x\n", RXD_ERRORS(RXD_PREV_HEAD));
+}
+
+void e1000e_interpret_rxd_shell() {
+  e1000e_interpret_rxd(dev_state);
+}
+
+void e1000e_read_stat(struct e1000e_state* state) {
+  DEBUG("total packet transmitted %d\n", READ_MEM(state->dev, E1000E_TPT_OFFSET));
+  DEBUG("total packet received %d\n", READ_MEM(state->dev, E1000E_TPR_OFFSET));
+  uint64_t temp64 = 0;
+  // this tor register must be read using two independent 32-bit accesses.
+  temp64 = READ_MEM(state->dev, E1000E_TORL_OFFSET);
+  temp64 |= (((uint64_t) READ_MEM(state->dev, E1000E_TORH_OFFSET)) << 32);
+  DEBUG("total octets received %d\n", temp64);
+
+  // this tot register must be read using two independent 32-bit accesses.
+  temp64 = READ_MEM(state->dev, E1000E_TOTL_OFFSET);
+  temp64 |= (((uint64_t) READ_MEM(state->dev, E1000E_TOTH_OFFSET)) << 32);
+  DEBUG("total octets transmitted %d\n", temp64);
+
+  DEBUG("receive error count %d\n",
+      READ_MEM(state->dev, E1000E_RXERRC_OFFSET));
+  DEBUG("receive no buffer count %d\n",
+      READ_MEM(state->dev, E1000E_RNBC_OFFSET));
+  DEBUG("good packet receive count %d\n",
+      READ_MEM(state->dev, E1000E_GPRC_OFFSET));
+  DEBUG("good packet transmitted count %d\n",
+      READ_MEM(state->dev, E1000E_GPTC_OFFSET));
+  DEBUG("collision count %d\n",
+      READ_MEM(state->dev, E1000E_COLC_OFFSET));
+  DEBUG("receive length error %d\n", 
+      READ_MEM(state->dev, E1000E_RLEC_OFFSET));
+  DEBUG("receive undersize count %d\n",
+      READ_MEM(state->dev, E1000E_RUC_OFFSET));
+  DEBUG("receive oversize count %d\n",
+      READ_MEM(state->dev, E1000E_ROC_OFFSET));
+}
+
+void e1000e_read_stat_shell() {
+  e1000e_read_stat(dev_state);
+}
+
+void e1000e_disable_all_int() {
+  WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
+  DEBUG("disable all int fn: end --------------------\n");
+  return;
+}
+
+void e1000e_trigger_int() {
+  // imc is a written only register.
+  DEBUG("trigger int fn: reset all ints by writing to IMC with 0xffffffff\n");
+  WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
+  // enable only transmit descriptor written back and receive interrupt timer
+  DEBUG("trigger int fn: set IMS with TXDW RXT0\n");
+  WRITE_MEM(dev_state->dev, E1000E_IMS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
+
+  if ((E1000E_ICR_TXDW | E1000E_ICR_RXT0) != READ_MEM(dev_state->dev, E1000E_IMS_OFFSET)) {
+    ERROR("trigger int fn: the written and read values of IMS reg do not match\n");
+    return;
+  }
+  // after the interrupt is turned on, the interrupt handler is called
+  // due to the transmit descriptor queue empty.
+  // set an interrupt on ICS register
+  // ICS is w reg which means its value cannot be read back.
+  DEBUG("trigger int fn: writing to ICS reg\n");
+  WRITE_MEM(dev_state->dev, E1000E_ICS_OFFSET, E1000E_ICR_TXDW | E1000E_ICR_RXT0);
+  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                                      0, E1000E_PCI_STATUS_OFFSET);
+  DEBUG("trigger int fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);
+  DEBUG("trigger int fn: end -------------------- \n");
+  return;
+}
+
+void e1000e_trigger_int_num(uint32_t int_num) {
+  // imc is a written only register.
+  WRITE_MEM(dev_state->dev, E1000E_IMC_OFFSET, 0xffffffff);
+  // enable only transmit descriptor written back and receive interrupt timer
+  WRITE_MEM(dev_state->dev, E1000E_IMS_OFFSET, int_num);
+  if (int_num != READ_MEM(dev_state->dev, E1000E_IMS_OFFSET)) {
+    ERROR("IMS reg: the written and read values do not match\n");
+    return;
+  }
+  // after the interrupt is turned on, the interrupt handler is called
+  // due to the transmit descriptor queue empty.
+  // set an interrupt on ICS register
+  WRITE_MEM(dev_state->dev, E1000E_ICS_OFFSET, int_num);
+
+  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                                      0, E1000E_PCI_STATUS_OFFSET);
+  DEBUG("trigger int num fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);
+  DEBUG("trigger int num fn: end -------------------- \n");
+  return;
+}
+
+void e1000e_legacy_int_off() {
+  uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN | E1000E_PCI_CMD_INT_DISABLE;
+  DEBUG("legacy int off fn: pci cmd: 0x%04x\n", pci_cmd);
+  pci_cfg_writew(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET, pci_cmd);
+  DEBUG("legacy int off fn: pci_cmd 0x%04x expects  0x%04x\n",
+        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                      0, E1000E_PCI_CMD_OFFSET),
+        pci_cmd);
+  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                                      0, E1000E_PCI_STATUS_OFFSET);
+  DEBUG("legacy int off fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);
+  DEBUG("legacy int off fn: end -------------------- \n");
+  return;
+}
+
+void e1000e_legacy_int_on() {
+  uint16_t pci_cmd = E1000E_PCI_CMD_MEM_ACCESS_EN | E1000E_PCI_CMD_IO_ACCESS_EN | E1000E_PCI_CMD_LANRW_EN;
+  DEBUG("legacy int on: pci cmd: 0x%04x\n", pci_cmd);
+  pci_cfg_writew(dev_state->bus_num,dev_state->dev_num, 0, E1000E_PCI_CMD_OFFSET, pci_cmd);
+  DEBUG("legacy int on: pci_cmd 0x%04x expects  0x%04x\n",
+        pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                      0, E1000E_PCI_CMD_OFFSET),
+        pci_cmd);
+  uint32_t status_pci = pci_cfg_readw(dev_state->bus_num, dev_state->dev_num,
+                                      0, E1000E_PCI_STATUS_OFFSET);
+  DEBUG("legacy int on fn: status_pci 0x%04x int %d\n",
+        status_pci, status_pci & E1000E_PCI_STATUS_INT);
+  DEBUG("legacy int on: end --------------------\n");
+  return;
+}
+
+void e1000e_reset_all_int() {
+  e1000e_interpret_icr(dev_state);
+  WRITE_MEM(dev_state->dev, E1000E_ICR_OFFSET, 0xffffffff);
+  e1000e_interpret_icr(dev_state);
+}
+
+void e1000e_reset_rxo() {
+  e1000e_interpret_icr(dev_state);
+  WRITE_MEM(dev_state->dev, E1000E_ICR_OFFSET, E1000E_ICR_RXO);
+  e1000e_interpret_icr(dev_state);
+}

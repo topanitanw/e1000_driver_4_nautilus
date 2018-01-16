@@ -173,16 +173,11 @@ static int e1000e_init_transmit_ring(struct e1000e_state *state) {
   // write tipg register
   // 00,00 0000 0110,0000 0010 00,00 0000 1010 = 0x0060200a
   // will be zero when emulating hardware
-  if(OPTIMIZE_LATENCY) {
-    // from page 348
-    e1000e_set_tipg(state, 6, 8, 6);
-  } else {
-    WRITE_MEM(state->dev, E1000E_TIPG_OFFSET,
-              E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
-    DEBUG("init tx fn: TIPG = 0x%08x expects 0x%08x\n",
-          READ_MEM(state->dev, E1000E_TIPG_OFFSET),
-          E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
-  }
+  WRITE_MEM(state->dev, E1000E_TIPG_OFFSET,
+            E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
+  DEBUG("init tx fn: TIPG = 0x%08x expects 0x%08x\n",
+        READ_MEM(state->dev, E1000E_TIPG_OFFSET),
+        E1000E_TIPG_IPGT | E1000E_TIPG_IPGR1 | E1000E_TIPG_IPGR2);
   return 0;
 }
 
@@ -251,12 +246,7 @@ static int e1000e_init_receive_ring(struct e1000e_state *state) {
         READ_MEM(state->dev, E1000E_RXDCTL_OFFSET),
         E1000E_RXDCTL_GRAN | E1000E_RXDCTL_WTHRESH);
   // write rctl register specifing the receive mode
-  uint32_t rctl_reg = 0;
-  if(OPTIMIZE_LATENCY) {
-    rctl_reg = E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048 | E1000E_RCTL_SECRC;
-  } else {
-    rctl_reg = E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_PMCF | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048;
-  }
+  uint32_t rctl_reg = E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048 | E1000E_RCTL_PMCF;
    
   // receive buffer threshold and size
   /* DEBUG("init rx fn: rctl_reg = 0x%08x, expected value: 0x%08x\n", */
@@ -555,12 +545,6 @@ void e1000e_interpret_icr(struct e1000e_state* state) {
   e1000e_interpret_int(state, icr_reg);
 }
 
-uint32_t e1000e_interpret_speed(uint32_t status_speed) {
-  if(status_speed == (E1000E_CTRL_SPEED_1GV2 >> 8))
-    return (E1000E_CTRL_SPEED_1GV1 >> 8);
-  return status_speed;
-}
-
 int e1000e_post_send(void *state,
                      uint8_t *src,
                      uint64_t len,
@@ -856,12 +840,7 @@ int e1000e_pci_init(struct naut_info * naut) {
 
   // uint32_t ctrl_reg = (E1000E_CTRL_FD | E1000E_CTRL_FRCSPD | E1000E_CTRL_FRCDPLX | E1000E_CTRL_SLU | E1000E_CTRL_SPEED_1G) & ~E1000E_CTRL_ILOS;
   // p50 manual
-  uint32_t ctrl_reg = 0;
-  if(OPTIMIZE_LATENCY) {
-    ctrl_reg = E1000E_CTRL_SLU;
-  } else {
-    ctrl_reg = E1000E_CTRL_SLU | E1000E_CTRL_RFCE | E1000E_CTRL_TFCE;
-  }
+  uint32_t ctrl_reg = E1000E_CTRL_SLU | E1000E_CTRL_RFCE | E1000E_CTRL_TFCE;
   
   WRITE_MEM(state->dev, E1000E_CTRL_OFFSET, ctrl_reg);
 
@@ -871,15 +850,24 @@ int e1000e_pci_init(struct naut_info * naut) {
 
   uint32_t status_reg = READ_MEM(state->dev, E1000E_STATUS_OFFSET);
   DEBUG("init fn: e1000e status = 0x%08x\n", status_reg);
-  DEBUG("init fn: does status.fd = 0x%01x? %s\n",
-        E1000E_STATUS_FD, status_reg & E1000E_STATUS_FD ? "yes":"no");
-  DEBUG("init fn: status.speed 0x%02x\n",
-        (status_reg & E1000E_STATUS_SPEED_MASK) >> 6);
-  DEBUG("init fn: status.asdv 0x%02x\n",
-        (status_reg & E1000E_STATUS_ASDV_MASK) >> 8);
+  INFO("init fn: does status.fd = 0x%01x? %s\n",
+       E1000E_STATUS_FD, 
+       status_reg & E1000E_STATUS_FD ? "full deplex":"halt deplex");
+  DEBUG("init fn: status.speed 0x%02x %s\n",
+        e1000e_read_speed_bit(status_reg, E1000E_STATUS_SPEED_MASK, 
+                              E1000E_STATUS_SPEED_SHIFT), 
+        e1000e_read_speed_char(status_reg, E1000E_STATUS_SPEED_MASK, 
+                               E1000E_STATUS_SPEED_SHIFT));
 
-  if(e1000e_interpret_speed((status_reg & E1000E_STATUS_SPEED_MASK) >> 6) !=
-     e1000e_interpret_speed((status_reg & E1000E_STATUS_ASDV_MASK) >> 8)) {
+  INFO("init fn: status.asdv 0x%02x %s\n",
+      e1000e_read_speed_bit(status_reg, 
+                              E1000E_STATUS_ASDV_MASK, 
+                              E1000E_STATUS_ASDV_SHIFT),
+        e1000e_read_speed_char(status_reg, 
+                               E1000E_STATUS_ASDV_MASK,
+                               E1000E_STATUS_ASDV_SHIFT));
+
+  if(e1000e_read_speed_bit(status_reg, E1000E_STATUS_SPEED_MASK, E1000E_STATUS_SPEED_SHIFT) !=  e1000e_read_speed_bit(status_reg, E1000E_STATUS_ASDV_MASK, E1000E_STATUS_ASDV_SHIFT)) {
     ERROR("init fn: setting speed and detecting speed do not match!!!\n");
   }
 
@@ -947,6 +935,10 @@ int e1000e_pci_init(struct naut_info * naut) {
   WRITE_MEM(state->dev, E1000E_ICR_OFFSET, 0xffffffff);
   e1000e_interpret_icr(state);
   DEBUG("init fn: finished writting ICR with 0xffffffff\n");
+
+  // optimization 
+  WRITE_MEM(state->dev, E1000E_AIT_OFFSET, 0);
+  WRITE_MEM(state->dev, E1000E_TADV_OFFSET, 0);
   DEBUG("init fn: end init fn --------------------\n");
 
   return 0;
@@ -958,6 +950,57 @@ int e1000e_pci_deinit() {
 }
 
 // debugging functions 
+void e1000e_opt(struct e1000e_state* state) {
+  WRITE_MEM(state->dev, E1000E_CTRL_OFFSET,
+            E1000E_CTRL_SLU | E1000E_CTRL_RFCE | E1000E_CTRL_TFCE);
+  WRITE_MEM(state->dev, E1000E_RCTL_OFFSET,
+            E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048 | E1000E_RCTL_SECRC);
+  e1000e_set_tipg(state, 6, 8, 6);
+  return;
+}
+
+void e1000e_opt_shell() {
+  e1000e_opt(dev_state);
+}
+
+void e1000e_no_opt(struct e1000e_state* state) {
+  WRITE_MEM(state->dev, E1000E_CTRL_OFFSET, E1000E_CTRL_SLU);
+  WRITE_MEM(state->dev, E1000E_RCTL_OFFSET,
+            E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048 | E1000E_RCTL_PMCF);
+  e1000e_set_tipg(state, 8, 10, 20);
+  return;
+}
+
+void e1000e_no_opt_shell() {
+  e1000e_no_opt(dev_state);
+}
+
+uint32_t e1000e_read_speed_bit(uint32_t reg, uint32_t mask, uint32_t shift) {
+  uint32_t speed = (reg & mask) >> shift;
+  if(speed == E1000E_SPEED_ENCODING_1G_V1 || speed == E1000E_SPEED_ENCODING_1G_V2) {
+    return E1000E_SPEED_ENCODING_1G_V1;
+  }
+  return speed;
+}
+
+char* e1000e_read_speed_char(uint32_t reg, uint32_t mask, uint32_t shift) {
+  uint32_t encoding = e1000e_read_speed_bit(reg, mask, shift);
+  char* res = NULL;
+  switch(encoding) {
+    case E1000E_SPEED_ENCODING_10M:
+      res = "10M";
+      break;
+    case E1000E_SPEED_ENCODING_100M:
+      res = "100M";
+      break;
+    case E1000E_SPEED_ENCODING_1G_V1:
+    case E1000E_SPEED_ENCODING_1G_V2:
+      res = "1G";
+      break;
+  }
+  return res;
+}
+
 static void e1000e_enable_psp(struct e1000e_state* state) {
   uint32_t tctl_reg = READ_MEM(state->dev, E1000E_TCTL_OFFSET);
   WRITE_MEM(state->dev, E1000E_TCTL_OFFSET, tctl_reg | E1000E_TCTL_PSP);

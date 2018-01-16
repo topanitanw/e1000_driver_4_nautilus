@@ -1099,7 +1099,8 @@ static int handle_cmd(char *buf, int n)
   if(!strncasecmp(buf, "start runt", 10)) {
     uint32_t num_pkt = 500;
     uint32_t machine_no = 0;
-    if(sscanf(buf, "start runt %u %u", &machine_no, &num_pkt) != 2) {
+    bool_t optimize = false;
+    if(sscanf(buf, "start runt %u %u %u", &machine_no, &num_pkt) != 2) {
       num_pkt = 500;
       machine_no = 4;
     }
@@ -1167,7 +1168,18 @@ static int handle_cmd(char *buf, int n)
     return 0;
   }
 
+  if(!strncasecmp(buf,"opt nic", 7)) {
+    nk_vc_printf("optimization nic\n");
+    e1000e_opt_shell();
+    return 0;
+  }
 
+  if(!strncasecmp(buf,"no opt nic", 10)) {
+    nk_vc_printf("no optimization nic\n");
+    e1000e_no_opt_shell();
+    return 0;
+  }
+  
 #ifdef NAUT_CONFIG_PROFILE
   if (!strncasecmp(buf,"inst",4)) {
     handle_instrument(buf);

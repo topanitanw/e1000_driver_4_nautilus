@@ -28,8 +28,6 @@
 #ifndef __E1000E_PCI
 #define __E1000E_PCI
 
-
-#define OPTIMIZE_LATENCY      1
 // Constant variables
 // These variables are configurable, and they will change the number of descriptors.
 // The number of descriptors is always a multiple of eight.
@@ -127,6 +125,9 @@
 #define E1000E_IMC_OFFSET     0x000D8  /* interrupt mask clear */
 #define E1000E_TIDV_OFFSET    0x03820  /* transmit interrupt delay value r/w */
 
+#define E1000E_AIT_OFFSET     0x00458  /* Adaptive IFS Throttle r/w */
+#define E1000E_TADV_OFFSET    0x0382C  /* transmit absolute interrupt delay value */ 
+
 // REGISTER BIT MASKS **********************************
 #define E1000E_GCR_B22               (1<<22)
 // Ctrl
@@ -137,6 +138,8 @@
 #define E1000E_CTRL_SPEED_100M       (1<<8)      // speed selection 100M
 #define E1000E_CTRL_SPEED_1GV1       (2<<8)      // speed selection 1g v1
 #define E1000E_CTRL_SPEED_1GV2       (3<<8)      // speed selection 1g v2
+#define E1000E_CTRL_SPEED_MASK       (3<<8)      // bit mask for speed in ctrl reg
+#define E1000E_CTRL_SPEED_SHIFT      8           // bit shift for speed in ctrl reg
 #define E1000E_CTRL_FRCSPD           (1<<11)     // force speed
 #define E1000E_CTRL_FRCDPLX          (1<<12)     // force duplex
 #define E1000E_CTRL_RST              (1<<26)     // reset
@@ -150,7 +153,10 @@
 #define E1000E_STATUS_SPEED_100M     (1<<6)
 #define E1000E_STATUS_SPEED_1G       (2<<6)
 #define E1000E_STATUS_SPEED_MASK     (3<<6)
+#define E1000E_STATUS_SPEED_SHIFT    6           // bit shift for speed in status reg
 #define E1000E_STATUS_ASDV_MASK      (3<<8)      // auto speed detect value
+#define E1000E_STATUS_ASDV_SHIFT     8           // bit shift for auto speed detect value 
+
 #define E1000E_STATUS_PHYRA          (1<<10)     // PHY required initialization
 
 // E1000E Transmit Control Register
@@ -253,10 +259,15 @@
 #define E1000E_ICR_TXQ1              (1 << 23)  // transmit queue 1 interrupt
 #define E1000E_ICR_OTHER             (1 << 24)  // other interrupts
 #define E1000E_ICR_INT_ASSERTED      (1 << 31)  // interrupt asserted
-
 #define E1000E_RDTR_FPD              (1 << 31)  // flush partial descriptor block
 
 #define E1000E_RSPD_MASK             ((uint32_t) (4095))  // 
+
+// the same encoding for status.speed, status.asdv, and ctrl.speed
+#define E1000E_SPEED_ENCODING_10M     0
+#define E1000E_SPEED_ENCODING_100M    1
+#define E1000E_SPEED_ENCODING_1G_V1   2
+#define E1000E_SPEED_ENCODING_1G_V2   3
 
 // new type declaration
 struct e1000e_dev {
@@ -377,7 +388,7 @@ void e1000e_legacy_int_on();
 int e1000e_pci_init(struct naut_info * naut);
 int e1000e_pci_deinit();
 void e1000e_interpret_int_shell();
-void e1000e_interpret_int(uint32_t);
+void e1000e_interpret_int(struct e1000e_state*, uint32_t);
 void e1000e_interpret_ims(struct e1000e_state*);
 void e1000e_interpret_icr(struct e1000e_state*);
 void e1000e_read_stat_shell();
@@ -392,4 +403,9 @@ void e1000e_disable_srpd_int_shell();
 void e1000e_interpret_rctl_shell();
 void e1000e_interpret_tctl_shell();
 
+uint32_t e1000e_read_speed_bit(uint32_t reg, uint32_t mask, uint32_t shift);
+char* e1000e_read_speed_char(uint32_t reg, uint32_t mask, uint32_t shift);
+
+void e1000e_opt_shell();
+void e1000e_no_opt_shell();
 #endif

@@ -1098,16 +1098,17 @@ static int handle_cmd(char *buf, int n)
 
   if(!strncasecmp(buf, "start runt", 10)) {
     uint32_t num_pkt = 500;
-    uint32_t machine_no = 0;
+    uint32_t dst_machine_no = 0;
     bool_t optimize = false;
-    if(sscanf(buf, "start runt %u %u %u", &machine_no, &num_pkt) != 2) {
+
+    if(sscanf(buf, "start runt %u %u %u", &dst_machine_no, &num_pkt, &optimize) != 3) {
       num_pkt = 500;
-      machine_no = 4;
+      dst_machine_no = 4;
     }
 
-    nk_vc_printf("start sending %d runt packets to machine %d\n", 
-        num_pkt, machine_no);
-    test_net_start_runt("e1000e-0", machine_no, num_pkt);
+    nk_vc_printf("start sending %d runt packets to machine %d opt %u\n", 
+        num_pkt, dst_machine_no, optimize);
+    test_net_start_runt("e1000e-0", dst_machine_no, num_pkt, optimize);
     return 0;
   }
 

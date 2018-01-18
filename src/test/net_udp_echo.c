@@ -38,7 +38,7 @@
 #include <dev/e1000e_pci.h>           // e1000e_interpret_int
 #include <nautilus/cpu.h>             // rdtsc 
 
-#define DEBUG_ECHO 1
+// #define DEBUG_ECHO 1
 
 #ifndef DEBUG_ECHO
 #undef DEBUG_PRINT
@@ -229,7 +229,6 @@ struct echo_info {
   struct nk_net_dev_characteristics dev_char;
   buf_t in;
   buf_t out;
-  data_collection_t data;
 };
 typedef struct echo_info echo_info_t;
 
@@ -760,12 +759,7 @@ int send_runt_packet(uint8_t* pkt_out,
   DEBUG("pkt_id %d\n", pkt_id);
   runt_hdr_t* runt_pkt = (runt_hdr_t*) pkt_out;
   create_eth_header(pkt_out, dst_mac, src_mac, ETHERNET_TYPE_RUNT);
-  DEBUG("after creating_eth_header\n");
-  print_runt_header(runt_pkt);
-  runt_pkt->pkt_id = pkt_id;\
-  DEBUG("after assigning pkt_id\n");
-  print_runt_header(runt_pkt);
-  DEBUG("sending a runt packet\n");
+  runt_pkt->pkt_id = pkt_id;
   int res = nk_net_dev_send_packet(ai->netdev,
                                    pkt_out,
                                    sizeof(runt_hdr_t),
@@ -789,7 +783,7 @@ sint32_t init_buf(buf_t* buffer, uint32_t sz) {
     return -1;
   }
 
-  DEBUG("%s malloc allocates at -x%p\n", __func__, buffer->buf);
+  DEBUG("%s malloc allocates at 0x%p\n", __func__, buffer->buf);
   memset(buffer->buf, 0, sz);
   return 0;
 }
@@ -797,18 +791,21 @@ sint32_t init_buf(buf_t* buffer, uint32_t sz) {
 void delete_echo_info(echo_info_t* info) {
   delete_buf(&(info->in));
   delete_buf(&(info->out));
-  free(info->data.tsc.arr);
 }
 
 sint32_t init_echo_info(echo_info_t* info,
                         struct action_info* ai,
-                        uint64_t pkt_size,
-                        sint64_t data_size) {
+                        uint64_t pkt_size) {
+  if(!info) {
+    ERROR("info = NULL\n");
+    return -1;
+  }
+
   memset(info, 0, sizeof(echo_info_t));
   
   if(!ai) {
     ERROR("ai = NULL\n");
-    return -1;
+    return -2;
   }
 
   info->ai = ai;
@@ -825,18 +822,70 @@ sint32_t init_echo_info(echo_info_t* info,
   if(!info->in.buf || !info->out.buf) {
     ERROR("%s cannot allocate memory\n", __func__);
     ERROR("in.buf 0x%p, out.buf 0x%p\n", info->in.buf, info->out.buf);
+    return -3;
+  }
+
+  DEBUG("info->in.buf 0x%p info->out.buf 0x%p\n", 
+        info->in.buf, info->out.buf);
+  return 0;
+}
+
+void delete_data_item(data_item_t* item) {
+  free(item->arr);
+}
+
+sint32_t init_data_item(data_item_t* item, uint64_t size) {
+  DEBUG("%s item 0x%p, size %lu\n", __func__, item, size);
+  if(!item) {
+    ERROR("item = NULL\n");
+    return -1;
+  }
+
+  if(size > 0) {
+    item->arr = malloc(size);
+    if(!item->arr) {
+      ERROR("%s alloc cannot allocate data\n", __func__);
+      return -2;
+    }
+  } else {
+    item->arr = NULL;
+  }
+
+  DEBUG("%s item->arr = 0x%p size %lu\n", __func__, item->arr, size);
+  item->total = 0;
+  return 0;
+}
+
+void delete_data_collection(data_collection_t* data) {
+  delete_data_item(&(data->tsc));
+}
+
+void print_data_collection(data_collection_t* data) {
+  INFO("data->size %lu\n", data->size);
+  for(uint64_t i = 0; i < data->size; i++) {
+    INFO("pkt_no |%lu| rtt |%lu|\n", i, data->tsc.arr[i]);
+  }
+    
+  // double freq = 2.2* 10e9;
+  INFO("total rtt %lu\n", data->tsc.total);
+  // INFO("frequency %e period %e\n", freq, 1/freq);
+  // INFO("average latency %e\n", data->tsc.total/(data->size + 1) * 1/freq);
+}
+
+sint32_t init_data_collection(data_collection_t *data, uint32_t data_size) {
+  DEBUG("%s data = 0x%p data_size: %u\n", __func__, data, data_size);
+  if(!data) { 
+    ERROR("%s data = 0x%p\n", __func__);
+    return -1;
+  }
+
+  if(init_data_item(&(data->tsc), data_size)) {
+    ERROR("%s cannot allocate data->tsc.arr\n", __func__);
     return -2;
   }
 
-  if(data_size > 0) {
-    info->data.tsc.arr = malloc(data_size);
-    if(!info->data.tsc.arr) {
-      ERROR("%s malloc cannot allocate data\n", __func__);
-      return -3;
-    }
-  }
-  
-  DEBUG("data->arr 0x%p\n", info->data.tsc.arr);
+  DEBUG("%s after calling init_data_item data->size = %u\n", __func__, data_size);
+  data->size = data_size;
   return 0;
 }
 
@@ -871,15 +920,15 @@ void print_echo_info(struct echo_info* info) {
 }
   
 static void ai_thread(void *in, void **out) {
+  DEBUG("ai_thread: in 0x%p\n", in);
   if(!in) {
     ERROR("in is NULL\n");
     return;
   }
   
-  DEBUG("ai_thread: in 0x%p\n", in);
   struct action_info* ai = (struct action_info *)in;
   echo_info_t info;
-  init_echo_info(&info, ai, 0, 0);
+  init_echo_info(&info, ai, 0);
   print_echo_info(&info);
   
   DEBUG("ai_thread before while ------------------------------\n");
@@ -1050,64 +1099,74 @@ static void start_runt_echo(void* in, void** out) {
   DEBUG("%s function: in 0x%p\n", __func__, in);
   if(!in) return;
 
-  struct action_info* info = (struct action_info*) in;
-  INFO("pkt_num = %d\n", in, info->packet_num); 
-
-  struct nk_net_dev_characteristics dev_char;
-  nk_net_dev_get_characteristics(info->netdev, &dev_char);
-
-  INFO("max tu = %d\n", 1500);
-  uint64_t bufsz = dev_char.packet_size_to_buffer_size(1500);
-  INFO("buffer size = %d\n", bufsz);
-
-  uint8_t* input_buf = malloc(bufsz);
-  uint8_t* output_buf = malloc(bufsz);
-
-  if(!input_buf || !output_buf) { 
-    ERROR("input_buf = &0x%p, output_buf = &0x%p\n", input_buf, output_buf);
-    if(input_buf) free(input_buf);
-    if(output_buf) free(output_buf);
+  struct action_info* ai = (struct action_info*) in;
+  
+  echo_info_t info;
+  if(init_echo_info(&info, ai, 0)) {
+    ERROR("init_echo_info error\n");
     return;
   }
 
-  memset(input_buf, 0, bufsz);
-  memset(output_buf, 0, bufsz);
+  print_echo_info(&info);
 
+  data_collection_t data;
+  
+  DEBUG("info.ai->packet_num %u\n", ai->packet_num);
+  if(init_data_collection(&data, ai->packet_num)) {
+    ERROR("init_data_collection error\n");
+    delete_echo_info(&info);
+    return;
+  }
+
+  DEBUG("data.size 0x%lx\n", data.size);
   uint32_t pkt_id = 0;
   uint64_t rtt_total = 0;
-  runt_hdr_t* runt_pkt_in = (runt_hdr_t*) input_buf;
+  runt_hdr_t* runt_pkt_in = (runt_hdr_t*) info.in.buf;
   INFO("before while loop\n");
 
-  uint64_t pkt_total_num = info->packet_num * 2;
+  uint64_t pkt_total_num = info.ai->packet_num * 2;
   while(pkt_id < pkt_total_num) {
     uint64_t rtt_start = rdtsc();
-    send_runt_packet(output_buf, info->dst_mac, dev_char.mac, pkt_id, info); 
+    DEBUG("before send current pkt_id %lu\n", pkt_id);
+    send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac, pkt_id, info.ai); 
     pkt_id++;
 
     uint8_t recv_runt = false;
     while(!recv_runt) {
-      nk_net_dev_receive_packet(info->netdev, input_buf,
-                                dev_char.max_tu, NK_DEV_REQ_BLOCKING,0,0);
+      DEBUG("after send current pkt_id %lu\n", pkt_id);
+      nk_net_dev_receive_packet(info.ai->netdev, info.in.buf,
+                                info.dev_char.max_tu, NK_DEV_REQ_BLOCKING,0,0);
+
       if(runt_pkt_in->eth_hdr.eth_type == ETHERNET_TYPE_RUNT &&
-         compare_mac(runt_pkt_in->eth_hdr.dst_mac, dev_char.mac) &&
+         compare_mac(runt_pkt_in->eth_hdr.dst_mac, info.dev_char.mac) &&
          runt_pkt_in->pkt_id == pkt_id) {
         recv_runt = true;
         pkt_id++;
+      } else if(runt_pkt_in->eth_hdr.eth_type == ETHERNET_TYPE_RUNT) {
+        ERROR("expected pkt_id %lu\n", pkt_id);
+        ERROR("printing received packets before exit\n");
+        print_runt_header(runt_pkt_in);
+        goto EXIT_RUNT;
       }
     } 
 
     uint64_t rtt_end = rdtsc();
+    uint64_t data_index = pkt_id/2; 
     uint64_t rtt_temp = rtt_end - rtt_start;
-    rtt_total += rtt_temp;
+    data.tsc.arr[data_index] = rtt_temp;
+    data.tsc.total += rtt_temp;
 
-    uint64_t pkt_recv_num = pkt_id/2; 
+#ifdef DEBUG_ECHO
     DEBUG("printing input packet\n");
     print_runt_header(runt_pkt_in);
-    INFO("pkt_no |%u| rtt |%u| total_rtt |%u|\n", pkt_recv_num, rtt_temp, rtt_total);
+    DEBUG("pkt_no |%u| rtt |%u| total_rtt |%u|\n", data_index, rtt_temp, data.tsc.total);
+#endif
   }
+  print_data_collection(&data);
 
-  free(input_buf);
-  free(output_buf);
+EXIT_RUNT:
+  delete_echo_info(&info);
+  delete_data_collection(&data);
   return;
 }
 
@@ -1133,13 +1192,15 @@ void test_net_start_runt(char* nic_name,
                          uint32_t machine_no,
                          uint32_t packet_num,
                          bool_t optimize) {
-  INFO("Starting %u runt packets at %s devices to this %d machine\n", 
-       packet_num, nic_name, machine_no);
+  INFO("Starting %u runt packets at %s devices to this %d machine optimize %u\n", 
+       packet_num, nic_name, machine_no, optimize);
 
   if(optimize) {
     e1000e_opt_shell();
+    INFO("optimize nic\n");
   } else {
     e1000e_no_opt_shell();
+    INFO("no optimize nic\n");
   }
       
   struct action_info ai;
@@ -1167,6 +1228,3 @@ void test_net_start_runt(char* nic_name,
   INFO("returning to the shell\n");
   return;
 }
-
-
-

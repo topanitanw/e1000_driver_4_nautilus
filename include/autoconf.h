@@ -1,7 +1,7 @@
 /*
  * Automatically generated C config: don't edit
  * Nautilus version: 
- * Tue Jan 16 04:15:56 2018
+ * Wed Jan 17 17:52:24 2018
  */
 #define AUTOCONF_INCLUDED
 
@@ -126,7 +126,7 @@
 #undef NAUT_CONFIG_VIRTIO_PCI
 #undef NAUT_CONFIG_E1000_PCI
 #define NAUT_CONFIG_E1000E_PCI 1
-#define NAUT_CONFIG_DEBUG_E1000E_PCI 1
+#undef NAUT_CONFIG_DEBUG_E1000E_PCI
 #undef NAUT_CONFIG_RAMDISK
 #undef NAUT_CONFIG_ATA
 

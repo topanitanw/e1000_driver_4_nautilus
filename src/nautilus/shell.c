@@ -1054,7 +1054,9 @@ static int handle_cmd(char *buf, int n)
     return 0;
   }
 
-  if(!strncasecmp(buf, "cancel", 6)) {
+  // if the user types cancel as a part of the command, we force CLI to receive
+  // a new command.
+  if(strstr(buf, "cancel")) {
     return 0;
   }
 
@@ -1134,11 +1136,13 @@ static int handle_cmd(char *buf, int n)
   }
 
   if(!strncasecmp(buf,"tx psp", 6)) {
+    nk_vc_printf("tx psp\n");
     e1000e_enable_psp_shell();
     return 0;
   }
 
   if(!strncasecmp(buf,"tx no psp", 9)) {
+    nk_vc_printf("tx no psp\n");
     e1000e_disable_psp_shell();
     return 0;
   }

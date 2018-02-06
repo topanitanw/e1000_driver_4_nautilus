@@ -955,6 +955,7 @@ void e1000e_opt(struct e1000e_state* state) {
             E1000E_CTRL_SLU | E1000E_CTRL_RFCE | E1000E_CTRL_TFCE);
   WRITE_MEM(state->dev, E1000E_RCTL_OFFSET,
             E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048 | E1000E_RCTL_SECRC);
+  e1000e_disable_psp_shell();
   e1000e_set_tipg(state, 6, 8, 6);
   return;
 }
@@ -967,6 +968,7 @@ void e1000e_no_opt(struct e1000e_state* state) {
   WRITE_MEM(state->dev, E1000E_CTRL_OFFSET, E1000E_CTRL_SLU);
   WRITE_MEM(state->dev, E1000E_RCTL_OFFSET,
             E1000E_RCTL_EN | E1000E_RCTL_SBP | E1000E_RCTL_UPE | E1000E_RCTL_LPE | E1000E_RCTL_DTYP_LEGACY | E1000E_RCTL_BAM | E1000E_RCTL_RDMTS_HALF | E1000E_RCTL_BSIZE_2048 | E1000E_RCTL_PMCF);
+  e1000e_enable_psp_shell();
   e1000e_set_tipg(state, 8, 10, 20);
   return;
 }

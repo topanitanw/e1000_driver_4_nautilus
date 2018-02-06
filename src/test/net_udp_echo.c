@@ -47,7 +47,7 @@
 
 #define INFO(fmt, args...) INFO_PRINT("net_udp_echo: " fmt, ##args)
 #define DEBUG(fmt, args...) DEBUG_PRINT("net_udp_echo: " fmt, ##args)
-#define ERROR(fmt, args...) ERROR_PRINT("net_udp_echo " fmt, ##args)
+#define ERROR(fmt, args...) ERROR_PRINT(fmt, ##args)
 
 uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
@@ -770,21 +770,21 @@ int send_runt_packet(uint8_t* pkt_out,
 
 
 void delete_buf(buf_t* buffer) {
-  if(!buffer->buf) {
-    free(buffer->buf);
-  }
+  if(!buffer->buf) return;
+  free(buffer->buf);
+  buffer->buf = NULL;
 }
 
 sint32_t init_buf(buf_t* buffer, uint32_t sz) {
   buffer->size = sz;
-  buffer->buf = malloc(sz);
+  buffer->buf = malloc(sz * sizeof(uint8_t));
   if(!buffer->buf) {
     ERROR("%s malloc cannot allocate memory\n", __func__);
     return -1;
   }
 
   DEBUG("%s malloc allocates at 0x%p\n", __func__, buffer->buf);
-  memset(buffer->buf, 0, sz);
+  memset(buffer->buf, 0, sz * sizeof(uint8_t));
   return 0;
 }
 
@@ -831,7 +831,9 @@ sint32_t init_echo_info(echo_info_t* info,
 }
 
 void delete_data_item(data_item_t* item) {
+  if(!item->arr) return;
   free(item->arr);
+  item->arr = NULL;
 }
 
 sint32_t init_data_item(data_item_t* item, uint64_t size) {
@@ -842,13 +844,15 @@ sint32_t init_data_item(data_item_t* item, uint64_t size) {
   }
 
   if(size > 0) {
-    item->arr = malloc(size);
+    item->arr = malloc(size * sizeof(uint64_t));
     if(!item->arr) {
       ERROR("%s alloc cannot allocate data\n", __func__);
       return -2;
     }
+    memset(item->arr, 0, size * sizeof(uint64_t));
   } else {
     item->arr = NULL;
+    ERROR("%s size = zero\n", __func__);
   }
 
   DEBUG("%s item->arr = 0x%p size %lu\n", __func__, item->arr, size);
@@ -863,7 +867,7 @@ void delete_data_collection(data_collection_t* data) {
 void print_data_collection(data_collection_t* data) {
   INFO("data->size %lu\n", data->size);
   for(uint64_t i = 0; i < data->size; i++) {
-    INFO("pkt_no |%lu| rtt |%lu|\n", i, data->tsc.arr[i]);
+    INFO("pkt_no |%lu| tsc |%lu|\n", i, data->tsc.arr[i]);
   }
     
   // double freq = 2.2* 10e9;
@@ -937,17 +941,17 @@ static void ai_thread(void *in, void **out) {
   uint32_t runt_pkt_id = 0;
      
   while (condition) {
-    DEBUG("ai_thread: while receiving ------------------------------\n");
+    // DEBUG("ai_thread: while receiving ------------------------------\n");
     nk_net_dev_receive_packet(ai->netdev, info.in.buf,
                               info.dev_char.max_tu, NK_DEV_REQ_BLOCKING,0,0);
 
-    dump_packet(info.in.buf, sizeof(runt_hdr_t));
-    if(!compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) &&
+    // dump_packet(info.in.buf, sizeof(runt_hdr_t));
+    if(// !compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) &&
        !compare_mac(eth_hdr_in->dst_mac, info.dev_char.mac)) {
       continue;
     }
 
-    DEBUG("switch cases \n");
+    // DEBUG("switch cases \n");
     switch(ntoh16(eth_hdr_in->eth_type)) {
       case ETHERNET_TYPE_RUNT: {
         DEBUG("received a runt packet and print its eth header\n");
@@ -956,6 +960,7 @@ static void ai_thread(void *in, void **out) {
 
         DEBUG("expecting packet id %d, received packet id %d\n",
               runt_pkt_id, runt_hdr_in->pkt_id);
+        
         if(runt_pkt_id == runt_hdr_in->pkt_id) {
           runt_pkt_id++;
           DEBUG("match pkt_id %d\n", runt_pkt_id);
@@ -964,8 +969,15 @@ static void ai_thread(void *in, void **out) {
           ai->packet_num -= 1;
           runt_pkt_id++;
         } else {
+          // force its sender to exit from the start runt command 
+          ERROR("expected pkt_id %lu received pkt_id %lu\n", 
+                runt_pkt_id, runt_hdr_in->pkt_id);
+          ERROR("printing received packets before exit\n");
+          send_runt_packet(info.out.buf, runt_hdr_in->eth_hdr.src_mac,
+                           info.dev_char.mac, ai->packet_num+1, ai);
           goto EXIT;
         }
+
         break;
       }
       case ETHERNET_TYPE_ARP: {
@@ -1117,50 +1129,61 @@ static void start_runt_echo(void* in, void** out) {
     delete_echo_info(&info);
     return;
   }
+  // print_data_collection(&data);
 
   DEBUG("data.size 0x%lx\n", data.size);
-  uint32_t pkt_id = 0;
-  uint64_t rtt_total = 0;
   runt_hdr_t* runt_pkt_in = (runt_hdr_t*) info.in.buf;
+  uint64_t pkt_total_num = info.ai->packet_num * 2;
+  
+  uint32_t pkt_id = 0;
+  uint64_t rtt_start = 0;
+  uint64_t rtt_end = 0;
+  uint64_t rtt_total = 0;
   INFO("before while loop\n");
 
-  uint64_t pkt_total_num = info.ai->packet_num * 2;
   while(pkt_id < pkt_total_num) {
-    uint64_t rtt_start = rdtsc();
+    rtt_start = rdtsc();
     DEBUG("before send current pkt_id %lu\n", pkt_id);
     send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac, pkt_id, info.ai); 
     pkt_id++;
 
     uint8_t recv_runt = false;
     while(!recv_runt) {
-      DEBUG("after send current pkt_id %lu\n", pkt_id);
+      // DEBUG("after send current pkt_id %lu\n", pkt_id);
       nk_net_dev_receive_packet(info.ai->netdev, info.in.buf,
                                 info.dev_char.max_tu, NK_DEV_REQ_BLOCKING,0,0);
 
-      if(runt_pkt_in->eth_hdr.eth_type == ETHERNET_TYPE_RUNT &&
-         compare_mac(runt_pkt_in->eth_hdr.dst_mac, info.dev_char.mac) &&
-         runt_pkt_in->pkt_id == pkt_id) {
+      rtt_end = rdtsc();
+
+      if(runt_pkt_in->eth_hdr.eth_type != ETHERNET_TYPE_RUNT ||
+         !compare_mac(runt_pkt_in->eth_hdr.dst_mac, info.dev_char.mac))
+        continue;
+      
+      if(runt_pkt_in->pkt_id == pkt_id) {
         recv_runt = true;
-        pkt_id++;
-      } else if(runt_pkt_in->eth_hdr.eth_type == ETHERNET_TYPE_RUNT) {
-        ERROR("expected pkt_id %lu\n", pkt_id);
+      } else {
+        ERROR("expected pkt_id %lu received pkt_id %lu\n", 
+              pkt_id, runt_pkt_in->pkt_id);
         ERROR("printing received packets before exit\n");
         print_runt_header(runt_pkt_in);
         goto EXIT_RUNT;
       }
     } 
 
-    uint64_t rtt_end = rdtsc();
     uint64_t data_index = pkt_id/2; 
     uint64_t rtt_temp = rtt_end - rtt_start;
+    INFO("id %lu\n", pkt_id);
     data.tsc.arr[data_index] = rtt_temp;
     data.tsc.total += rtt_temp;
 
+    udelay(30);
 #ifdef DEBUG_ECHO
     DEBUG("printing input packet\n");
     print_runt_header(runt_pkt_in);
-    DEBUG("pkt_no |%u| rtt |%u| total_rtt |%u|\n", data_index, rtt_temp, data.tsc.total);
+    DEBUG("pkt_no |%lu| rtt |%lu| total_rtt |%lu|\n",
+          data_index, data.tsc.arr[data_index], data.tsc.total);
 #endif
+    pkt_id++;
   }
   print_data_collection(&data);
 
@@ -1174,9 +1197,11 @@ static int select_dst_mac(uint32_t machine_no, uint8_t* dst_mac) {
   char* dst_mac_char = NULL;
   switch(machine_no) {
     case MACHINE_NO_R4154:  
+      INFO("Select R415-4 Mac Address\n"); 
       dst_mac_char = MAC_R4154_E1000E;
       break;
     case MACHINE_NO_R4155:
+      INFO("Select R415-5 Mac Address\n"); 
       dst_mac_char = MAC_R4155_E1000E;
       break;
     default:

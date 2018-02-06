@@ -261,7 +261,7 @@
 #define E1000E_ICR_INT_ASSERTED      (1 << 31)  // interrupt asserted
 #define E1000E_RDTR_FPD              (1 << 31)  // flush partial descriptor block
 
-#define E1000E_RSPD_MASK             ((uint32_t) (4095))  // 
+#define E1000E_RSPD_MASK             (0xfff)  // 
 
 // the same encoding for status.speed, status.asdv, and ctrl.speed
 #define E1000E_SPEED_ENCODING_10M     0

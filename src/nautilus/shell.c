@@ -40,6 +40,7 @@
 #include <test/threads.h>
 #include <test/groups.h>
 #include <test/net_udp_echo.h>
+#include <dev/e1000e_pci.h>
 
 #ifdef NAUT_CONFIG_PALACIOS
 #include <nautilus/vmm.h>
@@ -1091,6 +1092,137 @@ static int handle_cmd(char *buf, int n)
     return 0;
   }
 
+  // if the user types cancel as a part of the command, we force CLI to receive
+  // a new command.
+  if(strstr(buf, "cancel")) {
+    return 0;
+  }
+
+  if (!strncasecmp(buf,"ei",2)) {
+    void e1000e_trigger_int();
+    nk_vc_printf("Triggering E1000E interrupt\n");
+    e1000e_trigger_int();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"read int", 8)) {
+    // void e1000e_interpret_int_shell();
+    nk_vc_printf("Reading ICR register of e1000e\n");
+    e1000e_interpret_int_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"read stat", 8)) {
+    void e1000e_read_stat_shell();
+    nk_vc_printf("Reading stat registers of e1000e\n");
+    e1000e_read_stat_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"echo", 4)) {
+    uint32_t subnet = 190;
+    uint32_t pkt_num = 10;
+    // note, the ip is the nautilus' ip
+    if(sscanf(buf,"echo %u %u", &subnet, &pkt_num)==2) {
+      nk_vc_printf("test udp_echo e1000e-0 165.124.183.%u 5000 %u\n", subnet, pkt_num);
+    } else if(sscanf(buf,"echo %u", &subnet)==1) {
+      nk_vc_printf("test udp_echo e1000e-0 165.124.183.%u 5000 10\n", subnet);
+    } else { 
+      nk_vc_printf("test udp_echo e1000e-0 165.124.183.190 5000 1000\n");
+      subnet = 190;
+      pkt_num = 1000;
+    }
+    memset(buf, 0, MAX_CMD);
+    sprintf(buf, "test udp_echo e1000e-0 165.124.183.%u 5000 %u\n", subnet, pkt_num);
+  }
+
+  if(!strncasecmp(buf, "start runt", 10)) {
+    uint32_t num_pkt = 500;
+    uint32_t dst_machine_no = 0;
+    bool_t optimize = false;
+
+    if(sscanf(buf, "start runt %u %u %u", &dst_machine_no, &num_pkt, &optimize) != 3) {
+      num_pkt = 500;
+      dst_machine_no = 4;
+    }
+
+    nk_vc_printf("start sending %d runt packets to machine %d opt %u\n", 
+        num_pkt, dst_machine_no, optimize);
+    test_net_start_runt("e1000e-0", dst_machine_no, num_pkt, optimize);
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"reset all int", 13)) {
+    nk_vc_printf("reset all interrupts in icr register\n");
+    e1000e_reset_all_int();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"reset rxo", 9)) {
+    nk_vc_printf("reset rxo interrupt in icr register\n");
+    e1000e_reset_rxo();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"tx arp", 6)) {
+    test_net_send_arp_request();
+  }
+
+  if(!strncasecmp(buf,"tx runt", 7)) {
+    test_net_send_runt();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"tx psp", 6)) {
+    nk_vc_printf("tx psp\n");
+    e1000e_enable_psp_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"tx no psp", 9)) {
+    nk_vc_printf("tx no psp\n");
+    e1000e_disable_psp_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"set srpd", 8)) {
+    uint32_t size = 0;
+    if(sscanf(buf, "set srpd %u", &size) != 1) {
+      size = 19;
+    }
+    e1000e_enable_srpd_int_shell(size);
+    nk_vc_printf("set srpd\n");
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"reset srpd", 10)) {
+    e1000e_disable_srpd_int_shell();
+    nk_vc_printf("reset srpd\n");
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"read tctl", 9)) {
+    e1000e_interpret_tctl_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"read rctl", 9)) {
+    e1000e_interpret_rctl_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"opt nic", 7)) {
+    nk_vc_printf("optimization nic\n");
+    e1000e_opt_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"no opt nic", 10)) {
+    nk_vc_printf("no optimization nic\n");
+    e1000e_no_opt_shell();
+    return 0;
+  }
+  
 
 #ifdef NAUT_CONFIG_PROFILE
   if (!strncasecmp(buf,"inst",4)) {

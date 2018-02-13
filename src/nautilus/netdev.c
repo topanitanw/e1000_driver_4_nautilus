@@ -24,6 +24,8 @@
 #include <nautilus/nautilus.h>
 #include <nautilus/dev.h>
 #include <nautilus/netdev.h>
+#include <nautilus/cpu.h>
+#include <test/net_udp_echo.h>
 
 #ifndef NAUT_CONFIG_DEBUG_NETDEV
 #undef DEBUG_PRINT
@@ -42,6 +44,9 @@ static spinlock_t state_lock;
 #define STATE_UNLOCK() spin_unlock_irq_restore(&state_lock, _state_lock_flags);
 
 #endif
+
+uint64_t rtta = 0;
+uint64_t rttb = 0;
 
 int nk_net_dev_init()
 {
@@ -224,10 +229,18 @@ int nk_net_dev_receive_packet(struct nk_net_dev *dev,
 		    return 0;
 		}
 	    } else {
+		// volatile uint64_t a = rdtsc();
+		// extern uint64_t rtta;
+		// rtta = a;
+		rtta = rdtsc();
 		if (di->post_receive(d->state,dest,len,generic_receive_callback,(void*)&o)) { 
 		    ERROR("Failed to post receive\n");
 		    return -1;
 		} else {
+		    // a = rdtsc();
+		    // extern uint64_t rttb;
+		    // rttb = a;
+		    rttb = rdtsc();
 		    DEBUG("Packet receive posted, waiting for completion\n");
 		    while (!o.completed) {
 			nk_dev_wait((struct nk_dev *)d, generic_cond_check, (void*)&o);

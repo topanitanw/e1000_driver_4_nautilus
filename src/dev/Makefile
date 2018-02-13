@@ -15,6 +15,8 @@ obj-$(NAUT_CONFIG_VIRTIO_PCI) += virtio_pci.o
 
 obj-$(NAUT_CONFIG_E1000_PCI) += e1000_pci.o
 
+obj-$(NAUT_CONFIG_E1000E_PCI) += e1000e_pci.o
+
 obj-$(NAUT_CONFIG_RAMDISK) += ramdisk.o
 
 obj-$(NAUT_CONFIG_ATA) += ata.o

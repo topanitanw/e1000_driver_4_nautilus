@@ -174,7 +174,7 @@ int nk_net_dev_send_packet(struct nk_net_dev *dev,
 		} else {
 		    DEBUG("Packet launch started, waiting for completion\n");
 		    while (!o.completed) {
-			nk_dev_wait((struct nk_dev *)dev, generic_cond_check, (void*)&o);
+		      // nk_dev_wait((struct nk_dev *)dev, generic_cond_check, (void*)&o);
 		    }
 		    DEBUG("Packet launch completed\n");
 		    return o.status;
@@ -221,29 +221,30 @@ int nk_net_dev_receive_packet(struct nk_net_dev *dev,
 	    o.dev = dev;
 
 	    if (type==NK_DEV_REQ_NONBLOCKING) { 
+		rtta = rdtsc();
 		if (di->post_receive(d->state,dest,len,0,0)) { 
 		    ERROR("Failed to post receive\n");
 		    return -1;
 		} else {
+		    rttb = rdtsc();
 		    DEBUG("Packet receive posted\n");
 		    return 0;
 		}
 	    } else {
-		// volatile uint64_t a = rdtsc();
+		volatile uint64_t a = rdtsc();
 		// extern uint64_t rtta;
-		// rtta = a;
-		rtta = rdtsc();
-		if (di->post_receive(d->state,dest,len,generic_receive_callback,(void*)&o)) { 
+		rtta = a;
+		if (di->post_receive(d->state,dest,len,
+				     generic_receive_callback,(void*)&o)) { 
 		    ERROR("Failed to post receive\n");
 		    return -1;
 		} else {
-		    // a = rdtsc();
+		    a = rdtsc();
 		    // extern uint64_t rttb;
-		    // rttb = a;
-		    rttb = rdtsc();
+		    rttb = a;
 		    DEBUG("Packet receive posted, waiting for completion\n");
 		    while (!o.completed) {
-			nk_dev_wait((struct nk_dev *)d, generic_cond_check, (void*)&o);
+		      // nk_dev_wait((struct nk_dev *)d, generic_cond_check, (void*)&o);
 		    }
 		    DEBUG("Packet receive completed\n");
 		    return o.status;

@@ -1119,6 +1119,38 @@ static int handle_cmd(char *buf, int n)
     return 0;
   }
 
+  if(!strncasecmp(buf, "start runt", 10)) {
+    uint32_t num_pkt = 500;
+    uint32_t dst_machine_no = 0;
+    bool_t optimize = false;
+
+    if(sscanf(buf, "start runt %u %u %u", &dst_machine_no, &num_pkt, &optimize) != 3) {
+      num_pkt = 500;
+      dst_machine_no = 4;
+    }
+
+    nk_vc_printf("start sending %d runt packets to machine %d opt %u\n", 
+		 num_pkt, dst_machine_no, optimize);
+    test_net_start_runt("e1000e-0", dst_machine_no, num_pkt, optimize);
+    return 0;
+  }
+
+  if(!strncasecmp(buf, "echo runt", 9)) {
+    uint32_t num_pkt = 500;
+    uint32_t dst_machine_no = 0;
+    bool_t optimize = false;
+
+    if(sscanf(buf, "echo runt %u %u %u", &dst_machine_no, &num_pkt, &optimize) != 3) {
+      num_pkt = 500;
+      dst_machine_no = 4;
+    }
+
+    nk_vc_printf("echo sending %d runt packets to machine %d opt %u\n", 
+		 num_pkt, dst_machine_no, optimize);
+    test_net_echo_runt("e1000e-0", dst_machine_no, num_pkt, optimize);
+    return 0;
+  }
+
   if(!strncasecmp(buf,"echo", 4)) {
     uint32_t subnet = 190;
     uint32_t pkt_num = 10;
@@ -1134,22 +1166,6 @@ static int handle_cmd(char *buf, int n)
     }
     memset(buf, 0, MAX_CMD);
     sprintf(buf, "test udp_echo e1000e-0 165.124.183.%u 5000 %u\n", subnet, pkt_num);
-  }
-
-  if(!strncasecmp(buf, "start runt", 10)) {
-    uint32_t num_pkt = 500;
-    uint32_t dst_machine_no = 0;
-    bool_t optimize = false;
-
-    if(sscanf(buf, "start runt %u %u %u", &dst_machine_no, &num_pkt, &optimize) != 3) {
-      num_pkt = 500;
-      dst_machine_no = 4;
-    }
-
-    nk_vc_printf("start sending %d runt packets to machine %d opt %u\n", 
-        num_pkt, dst_machine_no, optimize);
-    test_net_start_runt("e1000e-0", dst_machine_no, num_pkt, optimize);
-    return 0;
   }
 
   if(!strncasecmp(buf,"reset all int", 13)) {

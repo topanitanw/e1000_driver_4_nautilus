@@ -175,7 +175,6 @@ config DEBUG_E1000_PCI
     help
       Turn on debug prints for the E1000 PCI driver
 
-
 config E1000E_PCI
     bool "E1000E PCI NIC Driver"
     depends on X86_64_HOST

@@ -38,6 +38,8 @@
 #define RX_BLOCKSIZE          256      // bytes available per DMA block
 #define RESTART_DELAY         5        // usec = 5 us 
 
+#define INT_DRIVEN            1
+
 // After this line, PLEASE DO NOT CHANGE ANYTHING.
 // transmission unit
 // Data sheet from page 36

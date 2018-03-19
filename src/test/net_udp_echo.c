@@ -53,7 +53,7 @@ uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 // general definition
 #define IPV4_LEN                  4              /* length of ipv4 in bytes */
-#define MAC_LEN                   6              /* length of mac address in bytes */
+#define MAC_INT_LEN                   6              /* length of mac address in bytes */
 #define IP_ADDRESS_STRING         "10.10.10.3"
 #define MAC_STRING_LEN            25             /* size of a string format of a mac address */
 /* a string format of a mac address xx:xx:xx_xx:xx:xx\0 */
@@ -72,6 +72,7 @@ uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 #define ETHERNET_TYPE_IPX         0x8137         /* ethernet type ipx */
 #define ETHERNET_TYPE_IPV6        0x86dd         /* ethernet type ipv6 */
 #define ETHERNET_TYPE_RUNT        0x5555         /* ethernet runt packet */
+#define ETHERNET_TYPE_IRUNT       0x5556         /* ethernet runt packet */
 
 // ip packet
 // ip protocol
@@ -95,11 +96,15 @@ uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 #define ICMP_ECHO_REPLY           0
 #define ICMP_ECHO_REQUEST         8
 
+#define TX_REQ NK_DEV_REQ_BLOCKING
+
+#define RX_REQ NK_DEV_REQ_BLOCKING
+
 // ethernet header
 // size = 18 bytes
 struct eth_header {
-  uint8_t  dst_mac[MAC_LEN];        /* destination mac address */
-  uint8_t  src_mac[MAC_LEN];        /* source mac address */
+  uint8_t  dst_mac[MAC_INT_LEN];        /* destination mac address */
+  uint8_t  src_mac[MAC_INT_LEN];        /* source mac address */
   uint16_t eth_type;                /* ethernet type */
 } __packed;
 typedef struct eth_header eth_hdr_t;
@@ -140,6 +145,7 @@ struct ip_header {
   uint32_t ip_src;                     /* source and dest address */
   uint32_t ip_dst;  
 } __packed;
+typedef struct ip_header ip_hdr_t;
 
 // udp header
 //  0              15  16             31
@@ -167,9 +173,9 @@ struct arp_header {
   uint8_t hw_len;                      /* hardware address length */
   uint8_t pro_len;                     /* protocol address length */
   uint16_t opcode;                     /* arp operation */
-  uint8_t sender_mac[MAC_LEN];         /* sender hardware address */
+  uint8_t sender_mac[MAC_INT_LEN];         /* sender hardware address */
   uint32_t sender_ip_addr;             /* sender protocol address */
-  uint8_t target_mac[MAC_LEN];         /* target hardware address */
+  uint8_t target_mac[MAC_INT_LEN];         /* target hardware address */
   uint32_t target_ip_addr;             /* target protocol address */
 } __attribute__((packed));
 
@@ -199,7 +205,7 @@ struct action_info {
   struct nk_net_dev *netdev;
   uint32_t nk_ip_addr;
   uint32_t dst_ip_addr;
-  uint8_t dst_mac[MAC_LEN];
+  uint8_t dst_mac[MAC_INT_LEN];
   uint16_t port;
   char* nic_name;
   uint32_t packet_num;
@@ -214,6 +220,7 @@ typedef struct data_item data_item_t;
 
 struct data_collection {
   data_item_t tsc;
+  data_item_t epkt; // error packet
   uint64_t size;
 };
 typedef struct data_collection data_collection_t;
@@ -232,8 +239,8 @@ struct echo_info {
 };
 typedef struct echo_info echo_info_t;
 
-static uint64_t rtta = 0;
-static uint64_t rttb = 0;
+extern uint64_t rtta;
+extern uint64_t rttb;
 static uint64_t rttc = 0;
 
 static inline int compare_mac(uint8_t* mac1, uint8_t* mac2) {
@@ -243,11 +250,11 @@ static inline int compare_mac(uint8_t* mac1, uint8_t* mac2) {
 }
 
 static int mac_strtoint(uint8_t* mac_int, char* mac_str) {
-  sint32_t temp[MAC_LEN];
-  if(MAC_LEN == sscanf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x*c", 
+  sint32_t temp[MAC_INT_LEN];
+  if(MAC_INT_LEN == sscanf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x*c", 
                        &temp[0], &temp[1], &temp[2], &temp[3], &temp[4], &temp[5])) {
     
-    for(uint8_t i = 0; i < MAC_LEN; i++) {
+    for(uint8_t i = 0; i < MAC_INT_LEN; i++) {
       mac_int[i] = temp[i];
     }
 
@@ -289,8 +296,7 @@ static void dump_packet(uint8_t *p, int len) {
   }
   buf[len*3] = 0;
 
-  DEBUG("Dump packet content %d bytes: \n", len);
-  DEBUG("%s\n", buf);
+  INFO("Dump packet content %d bytes: %s\n", len, buf);
 }
 
 static inline uint16_t hton16(uint16_t v) {
@@ -386,8 +392,8 @@ static inline uint8_t* get_udp_data(uint8_t* pkt) {
 static void create_eth_header(uint8_t *pkt, uint8_t *dst_mac,
                               uint8_t *src_mac, uint16_t ethtype) {
   struct eth_header* eth_hdr = (struct eth_header*) pkt;
-  memcpy(eth_hdr->dst_mac, dst_mac, MAC_LEN);
-  memcpy(eth_hdr->src_mac, src_mac, MAC_LEN);
+  memcpy(eth_hdr->dst_mac, dst_mac, MAC_INT_LEN);
+  memcpy(eth_hdr->src_mac, src_mac, MAC_INT_LEN);
   eth_hdr->eth_type = hton16(ethtype);
 }
 
@@ -397,19 +403,19 @@ static void create_arp_header(uint8_t *pkt, uint16_t opcode,
   struct arp_header *arp_hdr = (struct arp_header *) pkt;
   arp_hdr->hw_type = hton16(ARP_HW_TYPE_ETHERNET);
   arp_hdr->pro_type = hton16(ARP_PRO_TYPE_IPV4);
-  arp_hdr->hw_len = MAC_LEN;
+  arp_hdr->hw_len = MAC_INT_LEN;
   arp_hdr->pro_len = IPV4_LEN;
   arp_hdr->opcode = hton16(opcode);
   arp_hdr->sender_ip_addr = hton32(sender_ip);
-  memcpy((void*)arp_hdr->sender_mac, sender_mac, MAC_LEN);
+  memcpy((void*)arp_hdr->sender_mac, sender_mac, MAC_INT_LEN);
   arp_hdr->target_ip_addr = hton32(target_ip);
   switch (opcode) {
     case ARP_OPCODE_REPLY:
-      memcpy((void*)arp_hdr->target_mac, target_mac, MAC_LEN);
+      memcpy((void*)arp_hdr->target_mac, target_mac, MAC_INT_LEN);
       break;
     case ARP_OPCODE_REQUEST:
       // In an ARP request this field is ignored.
-      memset((void*)arp_hdr->target_mac, 0, MAC_LEN);
+      memset((void*)arp_hdr->target_mac, 0, MAC_INT_LEN);
       break;
   }
 }
@@ -494,27 +500,27 @@ static void print_eth_header(struct eth_header* pkt) {
   memset(buf, 0, sizeof(buf));
 
   mac_inttostr(pkt->dst_mac, buf, sizeof(buf));
-  DEBUG("\t dst_addr: %s\n",buf);
+  INFO("\t dst_addr: %s\n",buf);
 
   mac_inttostr(pkt->src_mac, buf, sizeof(buf));
-  DEBUG("\t src_addr: %s\n",buf);
+  INFO("\t src_addr: %s\n",buf);
 
   uint16_t host16 = ntoh16(pkt->eth_type);
   switch(host16) {
     case(ETHERNET_TYPE_ARP):
-      DEBUG("\t type = 0x%04x : ARP\n", host16);
+      INFO("\t type = 0x%04x : ARP\n", host16);
       break;
     case(ETHERNET_TYPE_IPV4):
-      DEBUG("\t type = 0x%04x : IPv4\n", host16);
+      INFO("\t type = 0x%04x : IPv4\n", host16);
       break;
     case(ETHERNET_TYPE_IPX):
-      DEBUG("\t type = 0x%x : IPx\n", host16);
+      INFO("\t type = 0x%x : IPx\n", host16);
       break;
     case(ETHERNET_TYPE_IPV6):
-      DEBUG("\t type = 0x%x : IPv6\n", host16);
+      INFO("\t type = 0x%x : IPv6\n", host16);
       break;
     default:
-      DEBUG("\t type = 0x%x : UNKNOWN\n", host16);
+      INFO("\t type = 0x%x : UNKNOWN\n", host16);
   }
 }
 
@@ -589,39 +595,40 @@ static void print_arp_short(uint8_t* pkt) {
 }
 
 static void print_ip_header(struct ip_header* pkt) {
-  DEBUG("ip header ------------------------------\n");
+  INFO("ip header ------------------------------\n");
   uint16_t host16 = 0;
-  DEBUG("\t header length: 0x%02x\n", pkt->hl);
-  DEBUG("\t version: 0x%02x\n", pkt->version);
-  DEBUG("\t type of service: 0x%02x\n", pkt->tos);
-  DEBUG("\t total length: %d\n", ntoh16(pkt->len));
-  DEBUG("\t id: %d 0x%04x\n", ntoh16(pkt->id));
-  DEBUG("\t flag: 0x%04x\n", pkt->offset & IP_FLAG_MASK);
-  DEBUG("\t offset: 0x%04x\n", ntoh16(pkt->offset));
-  DEBUG("\t time to live: 0x%02x\n", pkt->ttl);
+  INFO("\t header length: 0x%02x\n", pkt->hl);
+  INFO("\t version: 0x%02x\n", pkt->version);
+  INFO("\t type of service: 0x%02x\n", pkt->tos);
+  INFO("\t total length: %d\n", ntoh16(pkt->len));
+  INFO("\t id: %d 0x%04x\n", ntoh16(pkt->id));
+  INFO("\t flag: 0x%04x\n", pkt->offset & IP_FLAG_MASK);
+  INFO("\t offset: 0x%04x\n", ntoh16(pkt->offset));
+  INFO("\t time to live: 0x%02x\n", pkt->ttl);
 
   switch(pkt->protocol) {
     case IP_PRO_ICMP:
-      DEBUG("\t protocol: 0x%02x icmp: 0x%02x\n", pkt->protocol, IP_PRO_ICMP);
+      INFO("\t protocol: 0x%02x icmp: 0x%02x\n", pkt->protocol, IP_PRO_ICMP);
       break;
     case IP_PRO_UDP:
-      DEBUG("\t protocol: 0x%02x udp: 0x%02x\n", pkt->protocol, IP_PRO_UDP);
+      INFO("\t protocol: 0x%02x udp: 0x%02x\n", pkt->protocol, IP_PRO_UDP);
       break;
     default:
-      DEBUG("\t protocol: 0x%02x unknown\n", pkt->protocol);
+      INFO("\t protocol: 0x%02x unknown\n", pkt->protocol);
       break;
   }
 
-  DEBUG("\t checksum: 0x%04x cal checksum 0x%04x\n",
+  INFO("\t checksum: 0x%04x cal checksum 0x%04x\n",
         pkt->checksum, checksum((void *)pkt, sizeof(struct ip_header)));
   char buf[25];
   memset(buf, 0, sizeof(buf));
 
   ip_inttostr(ntoh32(pkt->ip_src), buf, sizeof(buf));
-  DEBUG("\t ip src %s\n", buf);
+  INFO("\t ip src %s\n", buf);
 
   ip_inttostr(ntoh32(pkt->ip_dst), buf, sizeof(buf));
-  DEBUG("\t ip dst %s\n", buf);
+  INFO("\t ip dst %s\n", buf);
+  return;
 }
 
 static void print_icmp_header(struct icmp_header* pkt) {
@@ -695,7 +702,7 @@ static int send_arp_response_packet(uint8_t* input_packet,
   return nk_net_dev_send_packet(ai->netdev,
                                 output_packet,
                                 sizeof(struct eth_header) + sizeof(struct arp_header),
-                                NK_DEV_REQ_BLOCKING,0,0);
+                                TX_REQ,0,0);
 }
 
 static int send_icmp_packet(uint8_t* input_packet, uint8_t* output_packet,
@@ -711,7 +718,7 @@ static int send_icmp_packet(uint8_t* input_packet, uint8_t* output_packet,
   print_icmp_packet(output_packet);
   return nk_net_dev_send_packet(ai->netdev, output_packet,
                                 sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct icmp_header) + 56,
-                                NK_DEV_REQ_BLOCKING,0,0);
+                                TX_REQ,0,0);
 }
 
 static int send_udp_packet(uint8_t* input_packet, uint8_t* output_packet,
@@ -731,7 +738,7 @@ static int send_udp_packet(uint8_t* input_packet, uint8_t* output_packet,
   print_udp_packet(output_packet);
   return nk_net_dev_send_packet(ai->netdev, output_packet,
                                 sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct udp_header) + strlen(udp_data_out),
-                                NK_DEV_REQ_BLOCKING,0,0);
+                                TX_REQ,0,0);
 }
 
 void send_arp_request_packet(uint8_t* pkt,
@@ -746,29 +753,51 @@ void send_arp_request_packet(uint8_t* pkt,
   nk_net_dev_send_packet(ai->netdev,
                          pkt,
                          sizeof(struct arp_packet),
-                         NK_DEV_REQ_BLOCKING,0,0);
+                         TX_REQ,0,0);
   DEBUG("finish sending arp request\n");  
 }
 
 void print_runt_header(runt_hdr_t* pkt) {
-  print_eth_header((eth_hdr_t*) pkt); 
-  DEBUG("\t pkt_id: %lu\n", pkt->pkt_id);
+  print_eth_header((eth_hdr_t*) pkt);
+  INFO("\t pkt_id: %lu\n", pkt->pkt_id);
+}
+
+void print_packet(uint8_t* pkt) {
+  eth_hdr_t* eth_hdr = (eth_hdr_t*) pkt;
+  switch(ntoh16(eth_hdr->eth_type)) {
+    case ETHERNET_TYPE_RUNT:
+      print_runt_header((runt_hdr_t*) pkt);
+      break;
+    case ETHERNET_TYPE_ARP:
+      print_arp_packet(pkt);
+      break;
+    default:
+    case ETHERNET_TYPE_IPV4:
+      print_eth_header((struct eth_header*)pkt);
+      print_ip_header(get_ip_header(pkt));
+      break;
+  }
+  return;
 }
 
 int send_runt_packet(uint8_t* pkt_out,
                      uint8_t* dst_mac, 
                      uint8_t* src_mac,
                      uint32_t pkt_id,
+		     uint16_t pkt_type,
                      struct action_info* ai) {
-  DEBUG("pkt_id %d\n", pkt_id);
+  DEBUG("%s pkt_id %d\n", __func__, pkt_id);
   runt_hdr_t* runt_pkt = (runt_hdr_t*) pkt_out;
-  create_eth_header(pkt_out, dst_mac, src_mac, ETHERNET_TYPE_RUNT);
+  create_eth_header(pkt_out, dst_mac, src_mac, pkt_type);
   runt_pkt->pkt_id = pkt_id;
+
+  // INFO("print a packet before sending\n");
+  // print_runt_header(runt_pkt);
   int res = nk_net_dev_send_packet(ai->netdev,
                                    pkt_out,
                                    sizeof(runt_hdr_t),
-                                   NK_DEV_REQ_BLOCKING, 0, 0);
-  DEBUG("finish sending a runt packet\n");  
+                                   TX_REQ, 0, 0);
+  // DEBUG("finish sending a runt packet\n");  
   return res;
 }
 
@@ -866,16 +895,19 @@ sint32_t init_data_item(data_item_t* item, uint64_t size) {
 
 void delete_data_collection(data_collection_t* data) {
   delete_data_item(&(data->tsc));
+  delete_data_item(&(data->epkt));
 }
 
 void print_data_collection(data_collection_t* data) {
   INFO("data->size %lu\n", data->size);
   for(uint64_t i = 0; i < data->size; i++) {
-    INFO("pkt_no |%lu| tsc |%lu|\n", i, data->tsc.arr[i]);
+    INFO("pkt_no |%lu| tsc |%lu| epkt |%lu|\n",
+	 i, data->tsc.arr[i], data->epkt.arr[i]);
   }
     
   // double freq = 2.2* 10e9;
   INFO("total rtt %lu\n", data->tsc.total);
+  INFO("total epkt %lu\n", data->epkt.total);
   // INFO("frequency %e period %e\n", freq, 1/freq);
   // INFO("average latency %e\n", data->tsc.total/(data->size + 1) * 1/freq);
 }
@@ -892,6 +924,10 @@ sint32_t init_data_collection(data_collection_t *data, uint32_t data_size) {
     return -2;
   }
 
+  if(init_data_item(&(data->epkt), data_size)) {
+    ERROR("%s cannot allocate data->epkt.arr\n", __func__);
+    return -2;
+  }
   DEBUG("%s after calling init_data_item data->size = %u\n", __func__, data_size);
   data->size = data_size;
   return 0;
@@ -923,14 +959,13 @@ void print_echo_info(struct echo_info* info) {
 
   INFO("ai_info: port # %d\n", info->ai->port);
   INFO("ai_info: nic_name %s\n", info->ai->nic_name);
-  INFO("ai_info: packet number %d\n", info->ai->packet_num);
   return;
 }
   
 static void ai_thread(void *in, void **out) {
-  DEBUG("ai_thread: in 0x%p\n", in);
+  DEBUG("%s ai_thread: in 0x%p\n", __func__, in);
   if(!in) {
-    ERROR("in is NULL\n");
+    ERROR("%s in is NULL\n", __func__);
     return;
   }
   
@@ -940,14 +975,16 @@ static void ai_thread(void *in, void **out) {
   print_echo_info(&info);
   
   DEBUG("ai_thread before while ------------------------------\n");
-  uint8_t condition = true;
+  uint64_t pkt_total_num = ai->packet_num;
+  uint64_t pkt_count = 0;
   struct eth_header *eth_hdr_in = (struct eth_header*) info.in.buf;
   uint32_t runt_pkt_id = 0;
      
-  while (condition) {
-    // DEBUG("ai_thread: while receiving ------------------------------\n");
+  while (pkt_count != pkt_total_num) {
+    DEBUG("ai_thread: while receiving ------------------------------\n");
+    DEBUG("pkt_count %lu pkt_id %lu\n", pkt_count, runt_pkt_id);
     nk_net_dev_receive_packet(ai->netdev, info.in.buf,
-                              info.dev_char.max_tu, NK_DEV_REQ_BLOCKING,0,0);
+                              info.dev_char.max_tu, RX_REQ, 0, 0);
 
     // dump_packet(info.in.buf, sizeof(runt_hdr_t));
     if(// !compare_mac(eth_hdr_in->dst_mac, (uint8_t*) ARP_BROADCAST_MAC) &&
@@ -955,12 +992,12 @@ static void ai_thread(void *in, void **out) {
       continue;
     }
 
-    // DEBUG("switch cases \n");
+    DEBUG("switch cases \n");
     switch(ntoh16(eth_hdr_in->eth_type)) {
       case ETHERNET_TYPE_RUNT: {
         DEBUG("received a runt packet and print its eth header\n");
         runt_hdr_t* runt_hdr_in = (runt_hdr_t*) eth_hdr_in;
-        print_runt_header(runt_hdr_in);
+        /* print_runt_header(runt_hdr_in); */
 
         DEBUG("expecting packet id %d, received packet id %d\n",
               runt_pkt_id, runt_hdr_in->pkt_id);
@@ -969,8 +1006,10 @@ static void ai_thread(void *in, void **out) {
           runt_pkt_id++;
           DEBUG("match pkt_id %d\n", runt_pkt_id);
           send_runt_packet(info.out.buf, runt_hdr_in->eth_hdr.src_mac,
-                           info.dev_char.mac, runt_pkt_id, ai);
-          ai->packet_num -= 1;
+                           info.dev_char.mac, runt_pkt_id, ETHERNET_TYPE_RUNT,
+			   ai);
+          DEBUG("after sending pkt_id %d\n", runt_pkt_id);
+          pkt_count++;
           runt_pkt_id++;
         } else {
           // force its sender to exit from the start runt command 
@@ -978,25 +1017,29 @@ static void ai_thread(void *in, void **out) {
                 runt_pkt_id, runt_hdr_in->pkt_id);
           ERROR("printing received packets before exit\n");
           send_runt_packet(info.out.buf, runt_hdr_in->eth_hdr.src_mac,
-                           info.dev_char.mac, ai->packet_num+1, ai);
-          goto EXIT;
+                           info.dev_char.mac, ai->packet_num, ETHERNET_TYPE_RUNT,
+			   ai);
+          goto EXIT_AI_THREAD;
         }
 
         break;
       }
+	  
       case ETHERNET_TYPE_ARP: {
         struct arp_header *arp_pkt_in = get_arp_header(info.in.buf);
         if((ntoh32(arp_pkt_in->target_ip_addr) == ai->nk_ip_addr) &&
-            (ntoh16(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST)) {
+	   (ntoh16(arp_pkt_in->opcode) == ARP_OPCODE_REQUEST)) {
           print_arp_short(info.in.buf);          
           send_arp_response_packet(info.in.buf, info.out.buf, info.dev_char.mac, ai);
           DEBUG("send arp packet complete\n");
         }
         break;
       }
+	
       case ETHERNET_TYPE_IPV4: {
         struct ip_header *ip_hdr_in = get_ip_header(info.in.buf);
         if(ntoh32(ip_hdr_in->ip_dst) == ai->nk_ip_addr) {
+
           struct icmp_header* icmp_hdr_in = get_icmp_header(info.in.buf);
           if ((ip_hdr_in->protocol == IP_PRO_ICMP) &&
               (icmp_hdr_in->type == ICMP_ECHO_REQUEST)) {
@@ -1009,26 +1052,27 @@ static void ai_thread(void *in, void **out) {
             if(ai->vc) {
               char buf_mac[MAC_STRING_LEN];
               char buf_ip[IP_STRING_LEN];
-              nk_vc_printf("the number of UDP packets left to receive: %d\n", ai->packet_num);
+              nk_vc_printf("the number of UDP packets left to receive: %d\n",
+			   ai->packet_num);
               mac_inttostr(eth_hdr_in->src_mac, buf_mac, MAC_STRING_LEN);
               nk_vc_printf("from MAC address: %s ", buf_mac);
               ip_inttostr(ntoh32(ip_hdr_in->ip_src), buf_ip, IP_STRING_LEN);
               nk_vc_printf("IP addres: %s\n", buf_ip);
               nk_vc_printf("UDP data: %s\n", get_udp_data(info.in.buf));
               nk_vc_printf("sending the packet back\n\n");
-              DEBUG("packet_num %d\n", ai->packet_num);
+              DEBUG("pkt_count %d\n", pkt_count);
             }
-            ai->packet_num -= 1;
+            pkt_count++;
           }
         }
         break;
       }
     } // switch
-    if(ai->packet_num == 0) condition = false;
   } // while
 
-EXIT:
+EXIT_AI_THREAD:
   delete_echo_info(&info);
+  return;
 }
 
 void test_net_udp_echo(char* nic_name, char *ip, uint16_t port, 
@@ -1051,7 +1095,7 @@ void test_net_udp_echo(char* nic_name, char *ip, uint16_t port,
   ai_thread((void*)&ai, NULL);
 }
 
-void test_net_send_arp_request(){
+void test_net_send_arp_request() {
   struct action_info ai;
   ai.netdev = nk_net_dev_find("e1000e-0");
   if (!ai.netdev) {
@@ -1095,7 +1139,7 @@ void test_net_send_runt() {
     ERROR("cannot allocate memory space for a packet\n");
   }
 
-  uint8_t dst_mac[MAC_LEN];
+  uint8_t dst_mac[MAC_INT_LEN];
   char* dst_mac_str ="68:05:ca_2d:a3:54";
   mac_strtoint(dst_mac, "68:05:ca_2d:a3:54");
   char mac_str[MAC_STRING_LEN];
@@ -1104,25 +1148,29 @@ void test_net_send_runt() {
         dst_mac_str, mac_str);
   for(int i = 0; i < 10; i++) {
     nk_vc_printf("sending a runt packet %d\n", i);
-    send_runt_packet(pkt, dst_mac, c.mac, 0, &ai);
+    send_runt_packet(pkt, dst_mac, c.mac, 0, ETHERNET_TYPE_RUNT, &ai);
     udelay(10000);
     e1000e_interpret_int_shell();   
   }
   free(pkt);
 }
 
-static void start_runt_echo(void* in, void** out) {
+static void start_runt(void* in, void** out) {
   DEBUG("%s function: in 0x%p\n", __func__, in);
-  if(!in) return;
+  if(!in) {
+    ERROR("%s: in is null\n", __func__);
+    return;
+  }
 
   struct action_info* ai = (struct action_info*) in;
   
   echo_info_t info;
   if(init_echo_info(&info, ai, 0)) {
-    ERROR("init_echo_info error\n");
+    ERROR("%s: init_echo_info error\n", __func__);
     return;
   }
 
+  INFO("print echo info\n");
   print_echo_info(&info);
 
   // data_collection_t data;
@@ -1152,53 +1200,87 @@ static void start_runt_echo(void* in, void** out) {
 
   // DEBUG("data.size 0x%lx\n", data.size);
   runt_hdr_t* runt_pkt_in = (runt_hdr_t*) info.in.buf;
-  uint64_t pkt_total_num = info.ai->packet_num * 2;
+  runt_hdr_t* runt_pkt_out = (runt_hdr_t*) info.out.buf;
+  uint64_t pkt_total_num = info.ai->packet_num;
   
   uint32_t pkt_id = 0;
   // uint64_t rtt_start = 0;
   // uint64_t rtt_end = 0;
   uint64_t rtt_total = 0;
-  uint64_t dindex = 0;
+  uint64_t data_index = 0;
+  bool_t wrong_packet = false;
   INFO("before while loop\n");
 
-  while(pkt_id < pkt_total_num) {
+  char mac_str[MAC_STRING_LEN];
+  mac_inttostr(info.dev_char.mac, mac_str, MAC_STRING_LEN); 
+  DEBUG("%s device mac %s\n", __func__, mac_str);
+  mac_inttostr(info.ai->dst_mac, mac_str, MAC_STRING_LEN); 
+  DEBUG("%s dst mac %s\n", __func__, mac_str);
+  
+  while(data_index < pkt_total_num) {
+    DEBUG("pkt_count %lu pkt_id %lu\n", data_index, pkt_id);
     // rtt_start = rdtsc(); // a
-    rtta = rdtsc();
-    
+    // rtta = rdtsc();
+    uint64_t pkt_error = 0;
     DEBUG("before send current pkt_id %lu\n", pkt_id);
-    send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac, pkt_id, info.ai); 
+    send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac,
+		     pkt_id, ETHERNET_TYPE_RUNT, info.ai); 
     pkt_id++;
 
     // rtt_mid = rdtsc(); // b
-    rttb = rdtsc(); 
+    // rttb = rdtsc(); 
     
     uint8_t recv_runt = false;
     while(!recv_runt) {
-      // DEBUG("after send current pkt_id %lu\n", pkt_id);
-      nk_net_dev_receive_packet(info.ai->netdev, info.in.buf,
-                                info.dev_char.max_tu, NK_DEV_REQ_BLOCKING,0,0);
+      DEBUG("after send current pkt_id %lu\n", pkt_id);
+      // please do not change the type of rx_status to non-volatile
+      volatile nk_net_dev_status_t rx_status = nk_net_dev_receive_packet(info.ai->netdev,
+									 info.in.buf,
+									 info.dev_char.max_tu,
+									 RX_REQ, 0, 0);
 
+      // INFO("after receiving a packet\n");
+      // print_runt_header(runt_pkt_in);
       // rtt_end = rdtsc(); // c
       rttc = rdtsc();
 
-      if(runt_pkt_in->eth_hdr.eth_type != ETHERNET_TYPE_RUNT) // ||
-        // !compare_mac(runt_pkt_in->eth_hdr.dst_mac, info.dev_char.mac))
-        continue;
+      if (NK_NET_DEV_STATUS_ERROR == rx_status) {
+	DEBUG("receive error\n");
+	print_packet(info.in.buf);
+	pkt_error++;
+	continue;
+      }
+
+      if(runt_pkt_in->eth_hdr.eth_type != ETHERNET_TYPE_RUNT) {
+	DEBUG("wrong packet type\n");
+	print_eth_header((eth_hdr_t*) info.in.buf);
+	print_ip_header((ip_hdr_t*) (info.in.buf + sizeof(eth_hdr_t)));
+	continue;
+	// wrong_packet = true;
+	// ERROR("fn:%s wrong packet type eth_type 0x%04x\n",
+	//       __func__, runt_pkt_in->eth_hdr.eth_type);
+	// goto EXIT_START_RUNT;
+      }
+      
+      if(!compare_mac(runt_pkt_in->eth_hdr.dst_mac, info.dev_char.mac)) {
+	wrong_packet = true;
+	ERROR("fn:%s wrong mac_address type\n", __func__);
+	goto EXIT_START_RUNT;
+      }
       
       if(runt_pkt_in->pkt_id == pkt_id) {
         recv_runt = true;
+	pkt_id++;
       } else {
+	wrong_packet = true;
         ERROR("expected pkt_id %lu received pkt_id %lu\n", 
               pkt_id, runt_pkt_in->pkt_id);
-        ERROR("printing received packets before exit\n");
-        print_runt_header(runt_pkt_in);
-        goto EXIT_RUNT;
+        goto EXIT_START_RUNT;
       }
     } 
 
-    uint64_t data_index = pkt_id/2; 
     // uint64_t rtt_temp = rtt_end - rtt_start;
-    // INFO("pkt_id %lu dindex %lu\n", pkt_id, dindex);
+    // INFO("pkt_id %lu dindex %lu\n", pkt_id, data_index);
 
     uint64_t rtt_ba = rttb - rtta;
     data_ba.tsc.arr[data_index] = rtt_ba;
@@ -1211,6 +1293,8 @@ static void start_runt_echo(void* in, void** out) {
     uint64_t rtt_ca = rttc - rtta;
     data_ca.tsc.arr[data_index] = rtt_ca;
     data_ca.tsc.total += rtt_ca;
+    data_ca.epkt.arr[data_index] = pkt_error;
+    data_ca.epkt.total += pkt_error;
 
     // udelay(30);
 #ifdef DEBUG_ECHO
@@ -1223,26 +1307,37 @@ static void start_runt_echo(void* in, void** out) {
     DEBUG("pkt_no |%lu| rtt ba |%lu| total_rtt |%lu|\n",
           data_index, data_ba.tsc.arr[data_index], data_ba.tsc.total);
 #endif
-    
-    dindex++;
-    pkt_id++;
+    DEBUG("%s data_index %d\n\n\n", __func__, data_index);
+    data_index++;
   }
   // print_data_collection(&data);
 
   for(uint64_t i = 0; i < data_ca.size; i++) {
     INFO("pkt_no |%lu| rtt_ca |%lu| rtt_cb |%lu| rtt_ba |%lu|\n",
          i, data_ca.tsc.arr[i], data_cb.tsc.arr[i], data_ba.tsc.arr[i]);
+    INFO("pkt_no |%lu| epkt_ca |%lu| epkt_cb |%lu| epkt_ba |%lu|\n",
+         i, data_ca.epkt.arr[i], data_cb.epkt.arr[i], data_ba.epkt.arr[i]);
   }
 
   INFO("total rtt ca %lu\n", data_ca.tsc.total);
   INFO("total rtt cb %lu\n", data_cb.tsc.total);
   INFO("total rtt ba %lu\n", data_ba.tsc.total);
-EXIT_RUNT:
+  INFO("total epkt ca %lu\n", data_ca.epkt.total);
+
+EXIT_START_RUNT:
+  if(wrong_packet) {
+    ERROR("fn:%s printing received packets before exit\n", __func__);
+    ERROR("fn:%s pkt_count %lu\n", __func__, data_index);
+    print_runt_header(runt_pkt_in);
+    dump_packet((uint8_t*) runt_pkt_in, sizeof(runt_hdr_t));
+    send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac,
+		     info.ai->packet_num + 1, ETHERNET_TYPE_IRUNT, info.ai); 
+  }
+
   delete_echo_info(&info);
   delete_data_collection(&data_ba);
   delete_data_collection(&data_cb);
   delete_data_collection(&data_ca);
-
   return;
 }
 
@@ -1263,6 +1358,48 @@ static int select_dst_mac(uint32_t machine_no, uint8_t* dst_mac) {
   }
   INFO("dst_mac %s\n", dst_mac_char);
   mac_strtoint(dst_mac, dst_mac_char);
+  char buf[MAC_STRING_LEN];
+  mac_inttostr(dst_mac, buf, sizeof(buf));
+  INFO("dst_mac (debug): %s\n", buf);
+  return 0;
+}
+
+static int setup_info(struct action_info* ai,
+		      char* nic_name,
+		      uint32_t machine_no,
+		      uint32_t packet_num,
+		      uint32_t optimize) {
+  if(!ai) {
+    ERROR("ai is null\n");
+    return -1;
+  }
+
+  if(optimize) {
+    e1000e_opt_shell();
+    INFO("optimize nic\n");
+  } else {
+    e1000e_no_opt_shell();
+    INFO("no optimize nic\n");
+  }
+
+  ai->netdev = nk_net_dev_find(nic_name);
+  if (!ai->netdev) {
+    nk_vc_printf("Cannot find the \"%s\" from nk_net_dev\n", nic_name);
+    return -2;
+  }
+  
+  ai->nk_ip_addr = 0;
+  ai->dst_ip_addr = 0;
+  
+  if(select_dst_mac(machine_no, ai->dst_mac)) {
+    ERROR("select_dst_mac machine_no %d\n", machine_no);
+    return -3;
+  }
+
+  ai->port = 0; // unused
+  ai->nic_name = nic_name;
+  ai->packet_num = packet_num;
+  ai->vc = true;
   return 0;
 }
 
@@ -1273,36 +1410,126 @@ void test_net_start_runt(char* nic_name,
   INFO("Starting %u runt packets at %s devices to this %d machine optimize %u\n", 
        packet_num, nic_name, machine_no, optimize);
 
-  if(optimize) {
-    e1000e_opt_shell();
-    INFO("optimize nic\n");
-  } else {
-    e1000e_no_opt_shell();
-    INFO("no optimize nic\n");
-  }
-      
   struct action_info ai;
-  ai.netdev = nk_net_dev_find(nic_name);
-  if (!ai.netdev) {
-    nk_vc_printf("Cannot find the \"%s\" from nk_net_dev\n", nic_name);
+  if(setup_info(&ai, nic_name, machine_no, packet_num, optimize)) {
+    ERROR("cannot setup an info, and exit from this command\n");
     return;
   }
-
-  ai.nk_ip_addr = 0;
-  ai.dst_ip_addr = 0;
-  
-  if(select_dst_mac(machine_no, ai.dst_mac)) {
-    ERROR("select_dst_mac machine_no %d\n", machine_no);
-    return;
-  }
-
-  ai.port = 0; // unused
-  ai.nic_name = nic_name;
-  ai.packet_num = packet_num;
-  ai.vc = true;
 
   INFO("calling start runt echo\n");
-  start_runt_echo((void*)&ai, NULL);
+  start_runt((void*)&ai, NULL);
   INFO("returning to the shell\n");
   return;
 }
+
+static int echo_runt(void* in, void** out) {
+  DEBUG("%s: in 0x%p\n", __func__, in);
+  if(!in) {
+    ERROR("%s: in is null\n", __func__);
+    return -1;
+  }
+
+  struct action_info* ai = (struct action_info*) in;
+
+  echo_info_t info;
+  if(init_echo_info(&info, ai, 0)) {
+    ERROR("%s: init_echo_info error\n", __func__);
+    return -2;
+  }
+
+  INFO("print echo info\n");
+  print_echo_info(&info);
+
+  runt_hdr_t* runt_pkt_in = (runt_hdr_t*) info.in.buf;
+  uint64_t pkt_total_num = info.ai->packet_num;
+  uint32_t pkt_id = 0;
+  uint32_t pkt_count = 0;
+  bool_t wrong_packet = false;
+  while(pkt_count < pkt_total_num) {
+    DEBUG("pkt_count %lu pkt_id %lu\n", pkt_count, pkt_id);
+    uint8_t recv_runt = false;
+    while(!recv_runt) {
+      DEBUG("receiving a packet\n");
+      // please do not change the type of rx_status to non-volatile
+      volatile nk_net_dev_status_t rx_status = nk_net_dev_receive_packet(info.ai->netdev,
+									 info.in.buf,
+									 info.dev_char.max_tu,
+									 RX_REQ, 0, 0);
+
+      if (NK_NET_DEV_STATUS_ERROR == rx_status) {
+	DEBUG("packet error\n");
+	print_packet(info.in.buf);
+	continue;
+      }
+
+      // INFO("%s after receiving a runt packet expected pkt_id %lu\n", __func__, pkt_id);
+      // print_runt_header((runt_hdr_t*) info.in.buf); 
+      
+      if(runt_pkt_in->eth_hdr.eth_type != ETHERNET_TYPE_RUNT) {
+	DEBUG("wrong packet type\n");
+	print_packet(info.in.buf);
+	continue;
+	// wrong_packet = true;
+	// ERROR("fn:%s wrong packet type eth_type 0x%04x\n",
+	//       __func__, runt_pkt_in->eth_hdr.eth_type);
+	// goto EXIT_ECHO_RUNT;
+      }
+
+      if(!compare_mac(runt_pkt_in->eth_hdr.dst_mac, info.dev_char.mac)) {
+	wrong_packet = true;
+	ERROR("fn:%s wrong mac_address type\n", __func__);
+	goto EXIT_ECHO_RUNT;
+      }
+      
+      if(runt_pkt_in->pkt_id == pkt_id) {
+	pkt_id++;
+        recv_runt = true;
+      } else {
+	wrong_packet = true;
+        ERROR("fn:%s expected pkt_id %lu received pkt_id %lu\n",
+	      __func__, pkt_id, runt_pkt_in->pkt_id);
+        goto EXIT_ECHO_RUNT;
+      }
+    } 
+
+    send_runt_packet(info.out.buf, runt_pkt_in->eth_hdr.src_mac,
+		     info.dev_char.mac, pkt_id, ETHERNET_TYPE_RUNT, ai);
+    DEBUG("after sending a runt packet pkt_id %d\n\n\n", pkt_id);
+    pkt_count++;
+    pkt_id++;
+  }
+
+EXIT_ECHO_RUNT:
+  if(wrong_packet) {
+    ERROR("printing received packets before exit\n");
+    ERROR("pkt_count %lu\n", pkt_count);
+    print_runt_header(runt_pkt_in);
+    dump_packet((uint8_t*) runt_pkt_in, sizeof(runt_hdr_t));
+    send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac,
+		     info.ai->packet_num + 1, ETHERNET_TYPE_RUNT, info.ai);
+  }
+    
+  delete_echo_info(&info);
+  return 0;
+}
+
+void test_net_echo_runt(char* nic_name,
+			uint32_t machine_no,
+			uint32_t packet_num,
+			bool_t optimize) {
+  INFO("Starting %u runt packets at %s devices to the %d machine optimize %u\n", 
+       packet_num, nic_name, machine_no, optimize);
+
+  struct action_info ai;
+  if(setup_info(&ai, nic_name, machine_no, packet_num, optimize)) {
+    ERROR("cannot setup an info, and exit from this command\n");
+    return;
+  }
+
+  INFO("calling echo_runt function\n");
+  echo_runt((void*)&ai, NULL);
+  INFO("%s returning to the shell\n", __func__);
+  return;
+}
+
+

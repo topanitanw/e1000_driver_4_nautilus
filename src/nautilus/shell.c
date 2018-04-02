@@ -1094,31 +1094,6 @@ static int handle_cmd(char *buf, int n)
 
   // if the user types cancel as a part of the command, we force CLI to receive
   // a new command.
-  if(strstr(buf, "cancel")) {
-    return 0;
-  }
-
-  if (!strncasecmp(buf,"ei",2)) {
-    void e1000e_trigger_int();
-    nk_vc_printf("Triggering E1000E interrupt\n");
-    e1000e_trigger_int();
-    return 0;
-  }
-
-  if(!strncasecmp(buf,"read int", 8)) {
-    // void e1000e_interpret_int_shell();
-    nk_vc_printf("Reading ICR register of e1000e\n");
-    e1000e_interpret_int_shell();
-    return 0;
-  }
-
-  if(!strncasecmp(buf,"read stat", 8)) {
-    void e1000e_read_stat_shell();
-    nk_vc_printf("Reading stat registers of e1000e\n");
-    e1000e_read_stat_shell();
-    return 0;
-  }
-
   if(!strncasecmp(buf, "start runt", 10)) {
     uint32_t num_pkt = 500;
     uint32_t dst_machine_no = 0;
@@ -1148,6 +1123,31 @@ static int handle_cmd(char *buf, int n)
     nk_vc_printf("echo sending %d runt packets to machine %d opt %u\n", 
 		 num_pkt, dst_machine_no, optimize);
     test_net_echo_runt("e1000e-0", dst_machine_no, num_pkt, optimize);
+    return 0;
+  }
+
+  if(strstr(buf, "cancel")) {
+    return 0;
+  }
+
+  if (!strncasecmp(buf,"ei",2)) {
+    void e1000e_trigger_int();
+    nk_vc_printf("Triggering E1000E interrupt\n");
+    e1000e_trigger_int();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"read int", 8)) {
+    // void e1000e_interpret_int_shell();
+    nk_vc_printf("Reading ICR register of e1000e\n");
+    e1000e_interpret_int_shell();
+    return 0;
+  }
+
+  if(!strncasecmp(buf,"read stat", 8)) {
+    void e1000e_read_stat_shell();
+    nk_vc_printf("Reading stat registers of e1000e\n");
+    e1000e_read_stat_shell();
     return 0;
   }
 

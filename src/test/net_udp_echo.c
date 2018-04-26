@@ -221,6 +221,7 @@ typedef struct data_item data_item_t;
 struct data_collection {
   data_item_t tsc;
   data_item_t epkt; // error packet
+  data_item_t rx_count;
   uint64_t size;
 };
 typedef struct data_collection data_collection_t;
@@ -239,9 +240,14 @@ struct echo_info {
 };
 typedef struct echo_info echo_info_t;
 
-extern uint64_t rtta;
-extern uint64_t rttb;
-static uint64_t rttc = 0;
+extern volatile uint64_t ps_sta;
+extern volatile uint64_t ps_end;
+
+extern volatile uint64_t pr_sta;
+extern volatile uint64_t pr_end;
+
+extern volatile uint64_t irq_sta;
+extern volatile uint64_t irq_end;
 
 static inline int compare_mac(uint8_t* mac1, uint8_t* mac2) {
   return ((mac1[0] == mac2[0]) && (mac1[1] == mac2[1]) && \
@@ -896,18 +902,19 @@ sint32_t init_data_item(data_item_t* item, uint64_t size) {
 void delete_data_collection(data_collection_t* data) {
   delete_data_item(&(data->tsc));
   delete_data_item(&(data->epkt));
+  delete_data_item(&(data->rx_count));
 }
 
 void print_data_collection(data_collection_t* data) {
   INFO("data->size %lu\n", data->size);
   for(uint64_t i = 0; i < data->size; i++) {
-    INFO("pkt_no |%lu| tsc |%lu| epkt |%lu|\n",
-	 i, data->tsc.arr[i], data->epkt.arr[i]);
+    INFO("pkt_no |%lu| tsc |%lu| epkt |%lu|\n", i, data->tsc.arr[i], data->epkt.arr[i]);
   }
     
   // double freq = 2.2* 10e9;
   INFO("total rtt %lu\n", data->tsc.total);
   INFO("total epkt %lu\n", data->epkt.total);
+  // INFO("total rx_count %lu\n", data->rx_count.total);
   // INFO("frequency %e period %e\n", freq, 1/freq);
   // INFO("average latency %e\n", data->tsc.total/(data->size + 1) * 1/freq);
 }
@@ -926,7 +933,12 @@ sint32_t init_data_collection(data_collection_t *data, uint32_t data_size) {
 
   if(init_data_item(&(data->epkt), data_size)) {
     ERROR("%s cannot allocate data->epkt.arr\n", __func__);
-    return -2;
+    return -3;
+  }
+
+  if(init_data_item(&(data->rx_count), data_size)) {
+    ERROR("%s cannot allocate data->epkt.arr\n", __func__);
+    return -4;
   }
   DEBUG("%s after calling init_data_item data->size = %u\n", __func__, data_size);
   data->size = data_size;
@@ -1122,16 +1134,18 @@ void test_net_send_arp_request() {
   free(pkt);
 }
 
-void test_net_send_runt() {
+void test_net_send_runt(uint64_t num_runt) {
   struct action_info ai;
   ai.netdev = nk_net_dev_find("e1000e-0");
+
   if (!ai.netdev) {
     DEBUG("cannot find the \"%s\" from nk_net_dev\n", "e1000e-0");
     return;
   }
+
   ai.nk_ip_addr = ip_strtoint("165.124.183.190");
   ai.dst_ip_addr = ip_strtoint("165.124.183.169");
-  nk_vc_printf("sending %d runt packets to 165.124.183.169 (r415-5)\n", 10);  
+  nk_vc_printf("sending %d runt packets to 165.124.183.169 (r415-5)\n", num_runt);  
   struct nk_net_dev_characteristics c;  
   nk_net_dev_get_characteristics(ai.netdev, &c);
   uint8_t* pkt = malloc(sizeof(eth_hdr_t)+80);
@@ -1142,11 +1156,13 @@ void test_net_send_runt() {
   uint8_t dst_mac[MAC_INT_LEN];
   char* dst_mac_str ="68:05:ca_2d:a3:54";
   mac_strtoint(dst_mac, "68:05:ca_2d:a3:54");
+
   char mac_str[MAC_STRING_LEN];
   mac_inttostr(dst_mac, mac_str, MAC_STRING_LEN); 
   DEBUG("mac str %s mac int converted to string %s\n",
         dst_mac_str, mac_str);
-  for(int i = 0; i < 10; i++) {
+
+  for(uint64_t i = 0; i < num_runt; i++) {
     nk_vc_printf("sending a runt packet %d\n", i);
     send_runt_packet(pkt, dst_mac, c.mac, 0, ETHERNET_TYPE_RUNT, &ai);
     udelay(10000);
@@ -1173,44 +1189,53 @@ static void start_runt(void* in, void** out) {
   INFO("print echo info\n");
   print_echo_info(&info);
 
-  // data_collection_t data;
-  data_collection_t data_ba;
-  data_collection_t data_cb;
-  data_collection_t data_ca;
+  data_collection_t data_ps;
+  data_collection_t data_pr;
+  data_collection_t data_irq;
+  data_collection_t data_rtt;
   
   DEBUG("info.ai->packet_num %u\n", ai->packet_num);
-  if(init_data_collection(&data_ba, ai->packet_num)) {
+  if(init_data_collection(&data_ps, ai->packet_num)) {
     ERROR("init_data_collection error\n");
     delete_echo_info(&info);
     return;
   }
 
-  if(init_data_collection(&data_cb, ai->packet_num)) {
+  if(init_data_collection(&data_pr, ai->packet_num)) {
     ERROR("init_data_collection error\n");
     delete_echo_info(&info);
     return;
   }
 
-  if(init_data_collection(&data_ca, ai->packet_num)) {
+  if(init_data_collection(&data_irq, ai->packet_num)) {
     ERROR("init_data_collection error\n");
     delete_echo_info(&info);
     return;
   }
-  // print_data_collection(&data);
 
-  // DEBUG("data.size 0x%lx\n", data.size);
+  if(init_data_collection(&data_rtt, ai->packet_num)) {
+    ERROR("init_data_collection error\n");
+    delete_echo_info(&info);
+    return;
+  }
+
   runt_hdr_t* runt_pkt_in = (runt_hdr_t*) info.in.buf;
   runt_hdr_t* runt_pkt_out = (runt_hdr_t*) info.out.buf;
   uint64_t pkt_total_num = info.ai->packet_num;
   
   uint32_t pkt_id = 0;
-  // uint64_t rtt_start = 0;
-  // uint64_t rtt_end = 0;
+  uint64_t rtt_sta = 0;
+  uint64_t rtt_end = 0;
   uint64_t rtt_total = 0;
+
   uint64_t data_index = 0;
   bool_t wrong_packet = false;
   INFO("before while loop\n");
 
+  INFO("before while loop\n");
+  INFO("before while loop\n");
+  INFO("before while loop\n");
+  INFO("before while loop\n");
   char mac_str[MAC_STRING_LEN];
   mac_inttostr(info.dev_char.mac, mac_str, MAC_STRING_LEN); 
   DEBUG("%s device mac %s\n", __func__, mac_str);
@@ -1219,110 +1244,113 @@ static void start_runt(void* in, void** out) {
   
   while(data_index < pkt_total_num) {
     DEBUG("pkt_count %lu pkt_id %lu\n", data_index, pkt_id);
-    // rtt_start = rdtsc(); // a
-    // rtta = rdtsc();
+
+    // #measure
+    rtt_sta = rdtsc(); 
+
     uint64_t pkt_error = 0;
+    uint64_t rx_count = 0;
     DEBUG("before send current pkt_id %lu\n", pkt_id);
     send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac,
-		     pkt_id, ETHERNET_TYPE_RUNT, info.ai); 
+		     pkt_id, ETHERNET_TYPE_RUNT, info.ai);
     pkt_id++;
 
-    // rtt_mid = rdtsc(); // b
-    // rttb = rdtsc(); 
-    
     uint8_t recv_runt = false;
     while(!recv_runt) {
       DEBUG("after send current pkt_id %lu\n", pkt_id);
       // please do not change the type of rx_status to non-volatile
+      rx_count++;
       volatile nk_net_dev_status_t rx_status = nk_net_dev_receive_packet(info.ai->netdev,
 									 info.in.buf,
 									 info.dev_char.max_tu,
 									 RX_REQ, 0, 0);
 
       // INFO("after receiving a packet\n");
-      // print_runt_header(runt_pkt_in);
-      // rtt_end = rdtsc(); // c
-      rttc = rdtsc();
+      // #measure
+      rtt_end = rdtsc();
 
       if (NK_NET_DEV_STATUS_ERROR == rx_status) {
-	DEBUG("receive error\n");
-	print_packet(info.in.buf);
-	pkt_error++;
-	continue;
+        DEBUG("receive error\n");
+        print_packet(info.in.buf);
+        pkt_error++;
+        continue;
       }
 
       if(runt_pkt_in->eth_hdr.eth_type != ETHERNET_TYPE_RUNT) {
-	DEBUG("wrong packet type\n");
-	print_eth_header((eth_hdr_t*) info.in.buf);
-	print_ip_header((ip_hdr_t*) (info.in.buf + sizeof(eth_hdr_t)));
-	continue;
-	// wrong_packet = true;
-	// ERROR("fn:%s wrong packet type eth_type 0x%04x\n",
-	//       __func__, runt_pkt_in->eth_hdr.eth_type);
-	// goto EXIT_START_RUNT;
+        DEBUG("wrong packet type\n");
+        print_eth_header((eth_hdr_t*) info.in.buf);
+        print_ip_header((ip_hdr_t*) (info.in.buf + sizeof(eth_hdr_t)));
+        continue;
       }
-      
+
       if(!compare_mac(runt_pkt_in->eth_hdr.dst_mac, info.dev_char.mac)) {
-	wrong_packet = true;
-	ERROR("fn:%s wrong mac_address type\n", __func__);
-	goto EXIT_START_RUNT;
+        wrong_packet = true;
+        ERROR("fn:%s wrong mac_address type\n", __func__);
+        goto EXIT_START_RUNT;
       }
-      
+
       if(runt_pkt_in->pkt_id == pkt_id) {
         recv_runt = true;
-	pkt_id++;
+        pkt_id++;
       } else {
-	wrong_packet = true;
+        wrong_packet = true;
         ERROR("expected pkt_id %lu received pkt_id %lu\n", 
-              pkt_id, runt_pkt_in->pkt_id);
+            pkt_id, runt_pkt_in->pkt_id);
         goto EXIT_START_RUNT;
       }
     } 
 
-    // uint64_t rtt_temp = rtt_end - rtt_start;
-    // INFO("pkt_id %lu dindex %lu\n", pkt_id, data_index);
+    uint64_t diff_temp = rtt_end - rtt_sta;
+    data_rtt.tsc.arr[data_index] = diff_temp;
+    data_rtt.tsc.total += diff_temp;
 
-    uint64_t rtt_ba = rttb - rtta;
-    data_ba.tsc.arr[data_index] = rtt_ba;
-    data_ba.tsc.total += rtt_ba;
+    data_rtt.epkt.arr[data_index] = pkt_error;
 
-    uint64_t rtt_cb = rttc - rttb;
-    data_cb.tsc.arr[data_index] = rtt_cb;
-    data_cb.tsc.total += rtt_cb;
+    data_rtt.rx_count.arr[data_index] = rx_count;
 
-    uint64_t rtt_ca = rttc - rtta;
-    data_ca.tsc.arr[data_index] = rtt_ca;
-    data_ca.tsc.total += rtt_ca;
-    data_ca.epkt.arr[data_index] = pkt_error;
-    data_ca.epkt.total += pkt_error;
+    
+    diff_temp = ps_end - ps_sta;
+    data_ps.tsc.arr[data_index] = diff_temp;
+    data_ps.tsc.total += diff_temp;
+
+    diff_temp = pr_end - pr_sta;
+    data_pr.tsc.arr[data_index] = diff_temp;
+    data_pr.tsc.total += diff_temp;
+
+    diff_temp = irq_end - irq_sta;
+    data_irq.tsc.arr[data_index] = diff_temp;
+    data_irq.tsc.total += diff_temp;
 
     // udelay(30);
 #ifdef DEBUG_ECHO
     DEBUG("printing input packet\n");
     print_runt_header(runt_pkt_in);
-    DEBUG("pkt_no |%lu| rtt ca |%lu| total_rtt |%lu|\n",
-          data_index, data_ca.tsc.arr[data_index], data_ca.tsc.total);
-    DEBUG("pkt_no |%lu| rtt cb |%lu| total_rtt |%lu|\n",
-          data_index, data_cb.tsc.arr[data_index], data_cb.tsc.total);
-    DEBUG("pkt_no |%lu| rtt ba |%lu| total_rtt |%lu|\n",
-          data_index, data_ba.tsc.arr[data_index], data_ba.tsc.total);
-#endif
+    DEBUG("pkt_no |%lu| rtt |%lu| total_rtt |%lu|\n",
+          data_index, data_rtt.tsc.arr[data_index], data_rtt.tsc.total);
+    DEBUG("pkt_no |%lu| ps |%lu| total_rtt |%lu|\n",
+          data_index, data_ps.tsc.arr[data_index], data_ps.tsc.total);
+    DEBUG("pkt_no |%lu| pr |%lu| total_rtt |%lu|\n",
+          data_index, data_pr.tsc.arr[data_index], data_pr.tsc.total);
+    DEBUG("pkt_no |%lu| irq |%lu| total_rtt |%lu|\n",
+          data_index, data_irq.tsc.arr[data_index], data_irq.tsc.total);
     DEBUG("%s data_index %d\n\n\n", __func__, data_index);
+#endif
     data_index++;
   }
   // print_data_collection(&data);
 
-  for(uint64_t i = 0; i < data_ca.size; i++) {
-    INFO("pkt_no |%lu| rtt_ca |%lu| rtt_cb |%lu| rtt_ba |%lu|\n",
-         i, data_ca.tsc.arr[i], data_cb.tsc.arr[i], data_ba.tsc.arr[i]);
-    INFO("pkt_no |%lu| epkt_ca |%lu| epkt_cb |%lu| epkt_ba |%lu|\n",
-         i, data_ca.epkt.arr[i], data_cb.epkt.arr[i], data_ba.epkt.arr[i]);
+  for(uint64_t i = 0; i < data_rtt.size; i++) {
+    INFO("pkt_no |%lu| rtt |%lu| ps |%lu| pr |%lu| irq |%lu|\n",
+         i, data_rtt.tsc.arr[i], data_ps.tsc.arr[i], data_pr.tsc.arr[i], data_irq.tsc.arr[i]);
+    INFO("pkt_no |%lu| epkt |%lu| rx_count |%lu|\n",
+         i, data_rtt.epkt.arr[i], data_rtt.rx_count.arr[i]);
   }
 
-  INFO("total rtt ca %lu\n", data_ca.tsc.total);
-  INFO("total rtt cb %lu\n", data_cb.tsc.total);
-  INFO("total rtt ba %lu\n", data_ba.tsc.total);
-  INFO("total epkt ca %lu\n", data_ca.epkt.total);
+  INFO("total rtt %lu\n", data_rtt.tsc.total);
+  INFO("total rtt ps %lu\n", data_ps.tsc.total);
+  INFO("total rtt pr %lu\n", data_pr.tsc.total);
+  INFO("total irq %lu\n", data_irq.tsc.total);
+  // INFO("total rx_count ca %lu\n", data_ca.rx_count.total);
 
 EXIT_START_RUNT:
   if(wrong_packet) {
@@ -1335,9 +1363,10 @@ EXIT_START_RUNT:
   }
 
   delete_echo_info(&info);
-  delete_data_collection(&data_ba);
-  delete_data_collection(&data_cb);
-  delete_data_collection(&data_ca);
+  delete_data_collection(&data_rtt);
+  delete_data_collection(&data_ps);
+  delete_data_collection(&data_pr);
+  delete_data_collection(&data_irq);
   return;
 }
 
@@ -1469,10 +1498,6 @@ static int echo_runt(void* in, void** out) {
 	DEBUG("wrong packet type\n");
 	print_packet(info.in.buf);
 	continue;
-	// wrong_packet = true;
-	// ERROR("fn:%s wrong packet type eth_type 0x%04x\n",
-	//       __func__, runt_pkt_in->eth_hdr.eth_type);
-	// goto EXIT_ECHO_RUNT;
       }
 
       if(!compare_mac(runt_pkt_in->eth_hdr.dst_mac, info.dev_char.mac)) {
@@ -1505,8 +1530,8 @@ EXIT_ECHO_RUNT:
     ERROR("pkt_count %lu\n", pkt_count);
     print_runt_header(runt_pkt_in);
     dump_packet((uint8_t*) runt_pkt_in, sizeof(runt_hdr_t));
-    send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac,
-		     info.ai->packet_num + 1, ETHERNET_TYPE_RUNT, info.ai);
+    /* send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac, */
+    /* 		     info.ai->packet_num + 1, ETHERNET_TYPE_RUNT, info.ai); */
   }
     
   delete_echo_info(&info);
@@ -1531,5 +1556,4 @@ void test_net_echo_runt(char* nic_name,
   INFO("%s returning to the shell\n", __func__);
   return;
 }
-
 

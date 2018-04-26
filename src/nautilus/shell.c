@@ -1092,8 +1092,6 @@ static int handle_cmd(char *buf, int n)
     return 0;
   }
 
-  // if the user types cancel as a part of the command, we force CLI to receive
-  // a new command.
   if(!strncasecmp(buf, "start runt", 10)) {
     uint32_t num_pkt = 500;
     uint32_t dst_machine_no = 0;
@@ -1115,22 +1113,24 @@ static int handle_cmd(char *buf, int n)
     uint32_t dst_machine_no = 0;
     bool_t optimize = false;
 
-    if(sscanf(buf, "echo runt %u %u %u", &dst_machine_no, &num_pkt, &optimize) != 3) {
+    if(sscanf(buf, "echo runt %u %u %d", &dst_machine_no, &num_pkt, &optimize) != 3) {
       num_pkt = 500;
       dst_machine_no = 4;
     }
 
     nk_vc_printf("echo sending %d runt packets to machine %d opt %u\n", 
-		 num_pkt, dst_machine_no, optimize);
+        num_pkt, dst_machine_no, optimize);
     test_net_echo_runt("e1000e-0", dst_machine_no, num_pkt, optimize);
     return 0;
   }
 
+  // if the user types cancel as a part of the command, we force CLI to receive
+  // a new command.
   if(strstr(buf, "cancel")) {
     return 0;
   }
 
-  if (!strncasecmp(buf,"ei",2)) {
+  if (!strncasecmp(buf,"trig int",2)) {
     void e1000e_trigger_int();
     nk_vc_printf("Triggering E1000E interrupt\n");
     e1000e_trigger_int();
@@ -1185,7 +1185,14 @@ static int handle_cmd(char *buf, int n)
   }
 
   if(!strncasecmp(buf,"tx runt", 7)) {
-    test_net_send_runt();
+    uint64_t num_runt = 0;
+    if(sscanf(buf, "tx runt %u", &num_runt) == 2) {
+      nk_vc_printf("tx runt %u\n", num_runt);
+    } else {
+      nk_vc_printf("tx runt 1\n");
+      num_runt = 1;
+    }
+    test_net_send_runt(num_runt);
     return 0;
   }
 
@@ -1239,6 +1246,11 @@ static int handle_cmd(char *buf, int n)
     return 0;
   }
   
+  if(!strncasecmp(buf,"dev delay", 8)) {
+    nk_vc_printf("no optimization nic\n");
+    e1000e_read_write();
+    return 0;
+  }
 
 #ifdef NAUT_CONFIG_PROFILE
   if (!strncasecmp(buf,"inst",4)) {

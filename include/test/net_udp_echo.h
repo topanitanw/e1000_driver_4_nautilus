@@ -40,4 +40,5 @@ void test_net_echo_runt(char* nic_name,
 			uint32_t packet_num,
 			bool_t optimize);
 
+void test_net_send_runt(uint64_t num_runt);
 #endif

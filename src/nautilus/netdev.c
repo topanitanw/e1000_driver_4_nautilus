@@ -26,6 +26,7 @@
 #include <nautilus/netdev.h>
 #include <nautilus/cpu.h>
 #include <test/net_udp_echo.h>
+#include <dev/e1000e_pci.h>
 
 #ifndef NAUT_CONFIG_DEBUG_NETDEV
 #undef DEBUG_PRINT
@@ -50,6 +51,8 @@ volatile uint64_t ps_end = 0;
 
 volatile uint64_t pr_sta = 0;
 volatile uint64_t pr_end = 0;
+
+extern volatile iteration_t measure;
 
 int nk_net_dev_init()
 {
@@ -171,20 +174,20 @@ int nk_net_dev_send_packet(struct nk_net_dev *dev,
 		    return 0;
 		}
 	    } else {
-	      // #measure
-	      volatile uint64_t a = rdtsc();
-	      ps_sta = a;
+		// #measure
+		ps_sta = rdtsc();
 		if (di->post_send(d->state,src,len,generic_send_callback,(void*)&o)) { 
 		    ERROR("Failed to launch send\n");
 		    return -1;
 		} else {
 		  // #measure
-		  a = rdtsc();
-		  ps_end = a;
+		    ps_end = rdtsc();
 		    DEBUG("Packet launch started, waiting for completion\n");
+		    GET_TSC(measure.tx.dev_wait.start);
 		    while (!o.completed) {
 		      nk_dev_wait((struct nk_dev *)dev, generic_cond_check, (void*)&o);
 		    }
+		    GET_TSC(measure.tx.dev_wait.end);
 		    DEBUG("Packet launch completed\n");
 		    return o.status;
 		}
@@ -238,20 +241,19 @@ int nk_net_dev_receive_packet(struct nk_net_dev *dev,
 		    return 0;
 		}
 	    } else {
-		volatile uint64_t a = rdtsc();
-		pr_sta = a;
+		pr_sta = rdtsc();
 		if (di->post_receive(d->state,dest,len,
 				     generic_receive_callback,(void*)&o)) { 
 		    ERROR("Failed to post receive\n");
 		    return -1;
 		} else {
-		    a = rdtsc();
-		    // extern uint64_t rttb;
-		    pr_end = a;
+		    pr_end = rdtsc();
 		    DEBUG("Packet receive posted, waiting for completion\n");
+		    GET_TSC(measure.rx.dev_wait.start);
 		    while (!o.completed) {
 		      nk_dev_wait((struct nk_dev *)d, generic_cond_check, (void*)&o);
 		    }
+		    GET_TSC(measure.rx.dev_wait.end);
 		    DEBUG("Packet receive completed\n");
 		    return o.status;
 		}

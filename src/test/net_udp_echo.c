@@ -226,6 +226,11 @@ struct data_collection {
 };
 typedef struct data_collection data_collection_t;
 
+typedef struct data_op {
+  data_collection_t tx;
+  data_collection_t rx;
+} data_op_t;
+
 struct buffer {
   uint8_t* buf;
   uint32_t size;
@@ -246,8 +251,7 @@ extern volatile uint64_t ps_end;
 extern volatile uint64_t pr_sta;
 extern volatile uint64_t pr_end;
 
-extern volatile uint64_t irq_sta;
-extern volatile uint64_t irq_end;
+extern volatile iteration_t measure;
 
 static inline int compare_mac(uint8_t* mac1, uint8_t* mac2) {
   return ((mac1[0] == mac2[0]) && (mac1[1] == mac2[1]) && \
@@ -899,6 +903,7 @@ sint32_t init_data_item(data_item_t* item, uint64_t size) {
   return 0;
 }
 
+
 void delete_data_collection(data_collection_t* data) {
   delete_data_item(&(data->tsc));
   delete_data_item(&(data->epkt));
@@ -943,6 +948,41 @@ sint32_t init_data_collection(data_collection_t *data, uint32_t data_size) {
   DEBUG("%s after calling init_data_item data->size = %u\n", __func__, data_size);
   data->size = data_size;
   return 0;
+}
+
+void delete_data_op(data_op_t* dop) {
+	delete_data_collection(&(dop->tx));
+	delete_data_collection(&(dop->rx));
+}
+
+int init_data_op(data_op_t* dop, uint64_t data_size) {
+	if(!dop) {
+		ERROR("%s dop is null\n", __func__);
+		return -1;
+	}
+
+	if(init_data_collection(&dop->tx, data_size)) {
+    ERROR("%s cannot allocate data_op->tx\n", __func__);
+    return -2;
+  }
+			
+	if(init_data_collection(&dop->rx, data_size)) {
+    ERROR("%s cannot allocate data_op->rx\n", __func__);
+    return -3;
+  }
+
+  return 0;
+}
+
+void update_data_op(data_op_t* dc, volatile tsc_t* tsc_tx,
+                    volatile tsc_t* tsc_rx, uint64_t index) {
+  uint64_t diff = tsc_tx->end - tsc_tx->start;
+  dc->tx.tsc.arr[index] = diff;
+  dc->tx.tsc.total = diff;
+  
+  diff = tsc_rx->end - tsc_rx->start;
+  dc->rx.tsc.arr[index] = diff;
+  dc->rx.tsc.total = diff;
 }
 
 void print_echo_info(struct echo_info* info) {
@@ -1189,10 +1229,9 @@ static void start_runt(void* in, void** out) {
   INFO("print echo info\n");
   print_echo_info(&info);
 
-  data_collection_t data_ps;
-  data_collection_t data_pr;
-  data_collection_t data_irq;
-  data_collection_t data_rtt;
+  data_collection_t data_ps, data_pr, data_rtt;
+  data_op_t dataop_irq, dataop_map, dataop_unmap, dataop_pkt, dataop_callback;
+  data_op_t dataop_dw;
   
   DEBUG("info.ai->packet_num %u\n", ai->packet_num);
   if(init_data_collection(&data_ps, ai->packet_num)) {
@@ -1203,22 +1242,44 @@ static void start_runt(void* in, void** out) {
 
   if(init_data_collection(&data_pr, ai->packet_num)) {
     ERROR("init_data_collection error\n");
-    delete_echo_info(&info);
-    return;
-  }
-
-  if(init_data_collection(&data_irq, ai->packet_num)) {
-    ERROR("init_data_collection error\n");
-    delete_echo_info(&info);
     return;
   }
 
   if(init_data_collection(&data_rtt, ai->packet_num)) {
     ERROR("init_data_collection error\n");
-    delete_echo_info(&info);
     return;
   }
 
+  if(init_data_op(&dataop_irq, ai->packet_num)) {
+    ERROR("init_data_op irq error\n");
+    return;
+  }
+
+  if(init_data_op(&dataop_map, ai->packet_num)) {
+    ERROR("init_data_op map error\n");
+    return;
+  }
+
+  if(init_data_op(&dataop_unmap, ai->packet_num)) {
+    ERROR("init_data_op unmap error\n");
+    return;
+  }
+
+  if(init_data_op(&dataop_pkt, ai->packet_num)) {
+    ERROR("init_data_op pkt error\n");
+    return;
+  }
+
+  if(init_data_op(&dataop_callback, ai->packet_num)) {
+    ERROR("init_data_op callback error\n");
+    return;
+  }
+
+  if(init_data_op(&dataop_dw, ai->packet_num)) {
+    ERROR("init_data_op dw error\n");
+    return;
+  }
+  
   runt_hdr_t* runt_pkt_in = (runt_hdr_t*) info.in.buf;
   runt_hdr_t* runt_pkt_out = (runt_hdr_t*) info.out.buf;
   uint64_t pkt_total_num = info.ai->packet_num;
@@ -1232,10 +1293,6 @@ static void start_runt(void* in, void** out) {
   bool_t wrong_packet = false;
   INFO("before while loop\n");
 
-  INFO("before while loop\n");
-  INFO("before while loop\n");
-  INFO("before while loop\n");
-  INFO("before while loop\n");
   char mac_str[MAC_STRING_LEN];
   mac_inttostr(info.dev_char.mac, mac_str, MAC_STRING_LEN); 
   DEBUG("%s device mac %s\n", __func__, mac_str);
@@ -1303,11 +1360,8 @@ static void start_runt(void* in, void** out) {
     uint64_t diff_temp = rtt_end - rtt_sta;
     data_rtt.tsc.arr[data_index] = diff_temp;
     data_rtt.tsc.total += diff_temp;
-
     data_rtt.epkt.arr[data_index] = pkt_error;
-
     data_rtt.rx_count.arr[data_index] = rx_count;
-
     
     diff_temp = ps_end - ps_sta;
     data_ps.tsc.arr[data_index] = diff_temp;
@@ -1317,10 +1371,13 @@ static void start_runt(void* in, void** out) {
     data_pr.tsc.arr[data_index] = diff_temp;
     data_pr.tsc.total += diff_temp;
 
-    diff_temp = irq_end - irq_sta;
-    data_irq.tsc.arr[data_index] = diff_temp;
-    data_irq.tsc.total += diff_temp;
-
+    update_data_op(&dataop_irq, &measure.tx.irq, &measure.rx.irq, data_index);
+    update_data_op(&dataop_map, &measure.tx.postx_map, &measure.rx.postx_map, data_index);
+    update_data_op(&dataop_unmap, &measure.tx.irq_unmap, &measure.rx.irq_unmap, data_index);
+    update_data_op(&dataop_pkt, &measure.tx.xpkt, &measure.rx.xpkt, data_index);
+    update_data_op(&dataop_callback, &measure.tx.irq_callback, &measure.rx.irq_callback, data_index);
+    update_data_op(&dataop_pkt, &measure.tx.xpkt, &measure.rx.xpkt, data_index);
+    update_data_op(&dataop_dw, &measure.tx.dev_wait, &measure.rx.dev_wait, data_index);
     // udelay(30);
 #ifdef DEBUG_ECHO
     DEBUG("printing input packet\n");
@@ -1340,8 +1397,8 @@ static void start_runt(void* in, void** out) {
   // print_data_collection(&data);
 
   for(uint64_t i = 0; i < data_rtt.size; i++) {
-    INFO("pkt_no |%lu| rtt |%lu| ps |%lu| pr |%lu| irq |%lu|\n",
-         i, data_rtt.tsc.arr[i], data_ps.tsc.arr[i], data_pr.tsc.arr[i], data_irq.tsc.arr[i]);
+    INFO("pkt_no |%lu| rtt |%lu| ps |%lu| pr |%lu|\n",
+         i, data_rtt.tsc.arr[i], data_ps.tsc.arr[i], data_pr.tsc.arr[i]);
     INFO("pkt_no |%lu| epkt |%lu| rx_count |%lu|\n",
          i, data_rtt.epkt.arr[i], data_rtt.rx_count.arr[i]);
   }
@@ -1349,8 +1406,6 @@ static void start_runt(void* in, void** out) {
   INFO("total rtt %lu\n", data_rtt.tsc.total);
   INFO("total rtt ps %lu\n", data_ps.tsc.total);
   INFO("total rtt pr %lu\n", data_pr.tsc.total);
-  INFO("total irq %lu\n", data_irq.tsc.total);
-  // INFO("total rx_count ca %lu\n", data_ca.rx_count.total);
 
 EXIT_START_RUNT:
   if(wrong_packet) {
@@ -1366,7 +1421,14 @@ EXIT_START_RUNT:
   delete_data_collection(&data_rtt);
   delete_data_collection(&data_ps);
   delete_data_collection(&data_pr);
-  delete_data_collection(&data_irq);
+
+  delete_data_op(&dataop_irq);
+  delete_data_op(&dataop_map);
+  delete_data_op(&dataop_unmap);
+  delete_data_op(&dataop_pkt);
+  delete_data_op(&dataop_callback);
+  delete_data_op(&dataop_dw);
+  
   return;
 }
 

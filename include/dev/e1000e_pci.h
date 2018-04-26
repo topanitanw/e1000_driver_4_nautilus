@@ -51,6 +51,32 @@ struct e1000e_state {
   uint32_t ims_reg;
 };
 
+struct tsc {
+  uint64_t start;
+  uint64_t end;
+};
+typedef struct tsc tsc_t;
+
+struct operation {
+  // should be a postx, but I did last week.
+  tsc_t postx_map;
+  tsc_t xpkt;
+  tsc_t irq_unmap;
+  tsc_t irq_callback;
+  tsc_t irq;
+  tsc_t dev_wait;
+};
+typedef struct operation op_t;
+
+struct iteration {
+  op_t tx;
+  op_t rx;
+};
+typedef struct iteration iteration_t;
+
+#define GET_TSC(x)                       ((x)=rdtsc())
+#define DIFF_TSC(r,s,e)                  ((r)=(e)-(s))
+
 // function declaration
 int e1000e_pci_init(struct naut_info * naut); 
 int e1000e_pci_deinit();

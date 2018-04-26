@@ -424,12 +424,9 @@ struct e1000e_map_ring {
 // Global variables
 static struct e1000e_state *dev_state = NULL;
 
-volatile uint64_t callback_sta = 0;
-volatile uint64_t callback_end = 0;
-volatile uint64_t tx_sta = 0;
-volatile uint64_T tx_sta = 0;
-volatile uint64_t irq_sta = 0;
-volatile uint64_t irq_end = 0;
+volatile iteration_t measure;
+
+// debugging functions 
 
 // Code
 inline uint64_t READ_MEM64(struct e1000e_dev* dev, uint64_t offset) {
@@ -878,11 +875,17 @@ int e1000e_post_send(void *vstate,
   struct e1000e_state* state = (struct e1000e_state*) vstate;
   DEBUG("post tx fn: callback 0x%p context 0x%p\n", callback, context);
 
+  // #measure
+  GET_TSC(measure.tx.postx_map.start);
   int result = e1000e_map_callback(state->tx_map, callback, context);
-  
+  GET_TSC(measure.tx.postx_map.end);
+
+  // #measure
+  GET_TSC(measure.tx.xpkt.start);
   if (!result) {
     result = e1000e_send_packet(src, len, (struct e1000e_state*) state);
   }
+  GET_TSC(measure.tx.xpkt.end);
 
   DEBUG("post tx fn: end\n");
   return result;
@@ -898,23 +901,36 @@ int e1000e_post_receive(void *vstate,
   struct e1000e_state* state = (struct e1000e_state*) vstate;
   DEBUG("post rx fn: callback 0x%p, context 0x%p\n", callback, context);
 
+  // #measure
+  GET_TSC(measure.rx.postx_map.start);
   int result = e1000e_map_callback(state->rx_map, callback, context);
+  GET_TSC(measure.rx.postx_map.end);
 
+  // #measure
+  GET_TSC(measure.rx.xpkt.start);
   if(!result) {
     result = e1000e_receive_packet(src, len, state);
   }
+  GET_TSC(measure.rx.xpkt.end);
 
   DEBUG("post rx fn: end --------------------\n");
   return result;
 }
+
+enum pkt_op { op_unknown, op_tx, op_rx };
 
 static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   DEBUG("irq_handler fn: vector: 0x%x rip: 0x%p s: 0x%p\n",
         vec, excp->rip, s);
 
   // #measure
-  irq_sta = rdtsc();
-
+  uint64_t irq_start = 0;
+  uint64_t irq_end = 0;
+  uint64_t callback_start = 0;
+  uint64_t callback_end = 0;
+  enum pkt_op which_op = op_unknown; 
+  
+  GET_TSC(irq_start);
   struct e1000e_state* state = s;
   uint32_t icr = READ_MEM(state->dev, E1000E_ICR_OFFSET);
   uint32_t mask_int = icr & state->ims_reg;
@@ -926,11 +942,16 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   nk_net_dev_status_t status = NK_NET_DEV_STATUS_SUCCESS;
 
   if(mask_int & (E1000E_ICR_TXDW | E1000E_ICR_TXQ0)) {
+    
+    which_op = op_tx;
     // transmit interrupt
     DEBUG("irq_handler fn: handle the txdw interrupt\n");
+    GET_TSC(measure.tx.irq_unmap.start);
     e1000e_unmap_callback(state->tx_map,
                           (uint64_t **)&callback,
                           (void **)&context);
+    GET_TSC(measure.tx.irq_unmap.end);
+    
     // if there is an error while sending a packet, set the error status
     if(TXD_STATUS(TXD_PREV_HEAD).ec || TXD_STATUS(TXD_PREV_HEAD).lc) {
       ERROR("irq_handler fn: transmit errors\n");
@@ -944,6 +965,7 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   }
 
   if(mask_int & (E1000E_ICR_RXT0 | E1000E_ICR_RXO | E1000E_ICR_RXQ0)) {
+    which_op = op_rx;
     // receive interrupt
     /* if(mask_int & E1000E_ICR_RXT0) { */
     /*   DEBUG("irq_handler fn: handle the rxt0 interrupt\n"); */
@@ -954,9 +976,11 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
     /* } */
    
     // INFO("rx length %d\n", RXD_LENGTH(RXD_PREV_HEAD));
+    GET_TSC(measure.rx.irq_unmap.start);
     e1000e_unmap_callback(state->rx_map,
                           (uint64_t **)&callback,
                           (void **)&context);
+    GET_TSC(measure.rx.irq_unmap.end);
 
     // e1000e_interpret_ims(state);
     // TODO: check if we need this line
@@ -972,10 +996,12 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
     RXD_PREV_HEAD = RXD_INC(1, RXD_PREV_HEAD);
   }
 
+  GET_TSC(callback_start);
   if(callback) {
     DEBUG("irq_handler fn: invoke callback function callback: 0x%p\n", callback);
     callback(status, context);
   }
+  GET_TSC(callback_end);
 
   DEBUG("irq_handler fn: end irq\n\n\n");
   // DO NOT DELETE THIS LINE.
@@ -984,6 +1010,19 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
 
   // #measure
   irq_end = rdtsc();
+
+  if(which_op == op_tx) {
+    measure.tx.irq_callback.start = callback_start;
+    measure.tx.irq_callback.end = callback_end;
+    measure.tx.irq.start = irq_start;
+    measure.tx.irq.end = irq_end;
+  } else {
+    measure.rx.irq_callback.start = callback_start;
+    measure.rx.irq_callback.end = callback_end;
+    measure.rx.irq.start = irq_start;
+    measure.rx.irq.end = irq_end;
+  }
+    
   return 0;
 }
 
@@ -1298,10 +1337,6 @@ int e1000e_pci_deinit() {
   INFO("deinited\n");
   return 0;
 }
-
-// debugging functions 
-#define GET_TSC(x)                       ((x)=rdtsc())
-#define DIFF_TSC(r,s,e)                  ((r)=(e)-(s))
 
 void e1000e_read_write() {
   INFO("Testing Read Write Delay\n");

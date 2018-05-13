@@ -1378,7 +1378,7 @@ static void start_runt(void* in, void** out) {
     update_data_op(&dataop_callback, &measure.tx.irq_callback, &measure.rx.irq_callback, data_index);
     update_data_op(&dataop_pkt, &measure.tx.xpkt, &measure.rx.xpkt, data_index);
     update_data_op(&dataop_dw, &measure.tx.dev_wait, &measure.rx.dev_wait, data_index);
-    // udelay(30);
+
 #ifdef DEBUG_ECHO
     DEBUG("printing input packet\n");
     print_runt_header(runt_pkt_in);
@@ -1397,10 +1397,18 @@ static void start_runt(void* in, void** out) {
   // print_data_collection(&data);
 
   for(uint64_t i = 0; i < data_rtt.size; i++) {
-    INFO("pkt_no |%lu| rtt |%lu| ps |%lu| pr |%lu|\n",
+    INFO("pkt_no |%lu| set | 1 | rtt |%lu| ps |%lu| pr |%lu|\n",
          i, data_rtt.tsc.arr[i], data_ps.tsc.arr[i], data_pr.tsc.arr[i]);
-    INFO("pkt_no |%lu| epkt |%lu| rx_count |%lu|\n",
+    INFO("pkt_no |%lu| set | 2 | epkt |%lu| rx_count |%lu|\n",
          i, data_rtt.epkt.arr[i], data_rtt.rx_count.arr[i]);
+    INFO("pkt_no |%lu| set | tx | pkt |%lu| irq |%lu| map |%lu| callback |%lu| unmap |%lu|\n",
+         i, dataop_pkt.tx.tsc.arr[i], dataop_irq.tx.tsc.arr[i], dataop_map.tx.tsc.arr[i],
+         dataop_callback.tx.tsc.arr[i], dataop_unmap.tx.tsc.arr[i]);
+    INFO("pkt_no |%lu| set | rx | pkt |%lu| irq |%lu| map |%lu| callback |%lu| unmap |%lu|\n",
+         i, dataop_pkt.rx.tsc.arr[i], dataop_irq.rx.tsc.arr[i], dataop_map.rx.tsc.arr[i],
+         dataop_callback.rx.tsc.arr[i], dataop_unmap.rx.tsc.arr[i]);
+    INFO("pkt_no |%lu| set | dw | tx |%lu| rx |%lu|\n",
+         i, dataop_dw.tx.tsc.arr[i], dataop_dw.rx.tsc.arr[i]);
   }
 
   INFO("total rtt %lu\n", data_rtt.tsc.total);

@@ -250,6 +250,7 @@ int nk_net_dev_receive_packet(struct nk_net_dev *dev,
 		    pr_end = rdtsc();
 		    DEBUG("Packet receive posted, waiting for completion\n");
 		    GET_TSC(measure.rx.dev_wait.start);
+                    // TODO: add a counter to
 		    while (!o.completed) {
 		      nk_dev_wait((struct nk_dev *)d, generic_cond_check, (void*)&o);
 		    }

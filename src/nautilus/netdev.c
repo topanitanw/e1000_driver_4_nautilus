@@ -185,7 +185,8 @@ int nk_net_dev_send_packet(struct nk_net_dev *dev,
 		    DEBUG("Packet launch started, waiting for completion\n");
 		    GET_TSC(measure.tx.dev_wait.start);
 		    while (!o.completed) {
-		      nk_dev_wait((struct nk_dev *)dev, generic_cond_check, (void*)&o);
+                        measure.tx.dev_wait_count++;
+                        nk_dev_wait((struct nk_dev *)dev, generic_cond_check, (void*)&o);
 		    }
 		    GET_TSC(measure.tx.dev_wait.end);
 		    DEBUG("Packet launch completed\n");
@@ -252,7 +253,8 @@ int nk_net_dev_receive_packet(struct nk_net_dev *dev,
 		    GET_TSC(measure.rx.dev_wait.start);
                     // TODO: add a counter to
 		    while (!o.completed) {
-		      nk_dev_wait((struct nk_dev *)d, generic_cond_check, (void*)&o);
+                        measure.rx.dev_wait_count++;
+                        nk_dev_wait((struct nk_dev *)d, generic_cond_check, (void*)&o);
 		    }
 		    GET_TSC(measure.rx.dev_wait.end);
 		    DEBUG("Packet receive completed\n");

@@ -58,11 +58,13 @@ uint8_t ARP_BROADCAST_MAC[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 #define MAC_STRING_LEN            25             /* size of a string format of a mac address */
 /* a string format of a mac address xx:xx:xx_xx:xx:xx\0 */
 #define IP_STRING_LEN             17             /* size of a string format of an ip address */
-#define MAC_R4154_E1000E          "68:05:CA:2D:A4:10"
-#define MAC_R4155_E1000E          "68:05:CA:2D:A3:54"
+#define MAC_R4154_E1000E          "68:05:CA:2D:A3:54"
+#define MAC_R4155_E1000E          "68:05:CA:2D:A4:10"
+#define MAC_R4156_E1000E          "68:05:CA:2D:A4:10"
 
 #define MACHINE_NO_R4154          4
 #define MACHINE_NO_R4155          5
+#define MACHINE_NO_R4156          6
 
 /* a string format of an ip address xxx.xxx.xxx.xxx\0 */
 
@@ -1291,6 +1293,9 @@ static void start_runt(void* in, void** out) {
 
   uint64_t data_index = 0;
   bool_t wrong_packet = false;
+  
+  uint64_t pkt_error = 0;
+  uint64_t rx_count = 0;
   INFO("before while loop\n");
 
   char mac_str[MAC_STRING_LEN];
@@ -1305,8 +1310,6 @@ static void start_runt(void* in, void** out) {
     // #measure
     rtt_sta = rdtsc(); 
 
-    uint64_t pkt_error = 0;
-    uint64_t rx_count = 0;
     DEBUG("before send current pkt_id %lu\n", pkt_id);
     send_runt_packet(info.out.buf, info.ai->dst_mac, info.dev_char.mac,
 		     pkt_id, ETHERNET_TYPE_RUNT, info.ai);
@@ -1360,16 +1363,28 @@ static void start_runt(void* in, void** out) {
     uint64_t diff_temp = rtt_end - rtt_sta;
     data_rtt.tsc.arr[data_index] = diff_temp;
     data_rtt.tsc.total += diff_temp;
+    
     data_rtt.epkt.arr[data_index] = pkt_error;
+    data_rtt.epkt.total += pkt_error;
+    pkt_error = 0;
+    
     data_rtt.rx_count.arr[data_index] = rx_count;
+    data_rtt.rx_count.total += rx_count;
+    rx_count = 0;
     
     diff_temp = ps_end - ps_sta;
     data_ps.tsc.arr[data_index] = diff_temp;
     data_ps.tsc.total += diff_temp;
-
+    data_ps.rx_count.arr[data_index] = measure.tx.dev_wait_count;
+    data_ps.rx_count.total += measure.tx.dev_wait_count;
+    measure.tx.dev_wait_count = 0;
+    
     diff_temp = pr_end - pr_sta;
     data_pr.tsc.arr[data_index] = diff_temp;
     data_pr.tsc.total += diff_temp;
+    data_pr.rx_count.arr[data_index] = measure.rx.dev_wait_count;
+    data_pr.rx_count.total += measure.rx.dev_wait_count;
+    measure.rx.dev_wait_count = 0;
 
     update_data_op(&dataop_irq, &measure.tx.irq, &measure.rx.irq, data_index);
     update_data_op(&dataop_map, &measure.tx.postx_map, &measure.rx.postx_map, data_index);
@@ -1395,25 +1410,51 @@ static void start_runt(void* in, void** out) {
     data_index++;
   }
   // print_data_collection(&data);
-
+  INFO("| 0 | 10 | 11 | 12 | 20 | 30 | 60 | 40 | 20 | 40 | 50 | 70 \n");
+  INFO("| pkt# | rtt | epkt | rx_count | post_tx | tx_pkt | tx_irq | tx_map | tx_cb | tx_unmap | tx_dw | tx_dw_c\n");
   for(uint64_t i = 0; i < data_rtt.size; i++) {
-    INFO("pkt_no |%lu| set | 1 | rtt |%lu| ps |%lu| pr |%lu|\n",
-         i, data_rtt.tsc.arr[i], data_ps.tsc.arr[i], data_pr.tsc.arr[i]);
-    INFO("pkt_no |%lu| set | 2 | epkt |%lu| rx_count |%lu|\n",
-         i, data_rtt.epkt.arr[i], data_rtt.rx_count.arr[i]);
-    INFO("pkt_no |%lu| set | tx | pkt |%lu| irq |%lu| map |%lu| callback |%lu| unmap |%lu|\n",
-         i, dataop_pkt.tx.tsc.arr[i], dataop_irq.tx.tsc.arr[i], dataop_map.tx.tsc.arr[i],
-         dataop_callback.tx.tsc.arr[i], dataop_unmap.tx.tsc.arr[i]);
-    INFO("pkt_no |%lu| set | rx | pkt |%lu| irq |%lu| map |%lu| callback |%lu| unmap |%lu|\n",
-         i, dataop_pkt.rx.tsc.arr[i], dataop_irq.rx.tsc.arr[i], dataop_map.rx.tsc.arr[i],
-         dataop_callback.rx.tsc.arr[i], dataop_unmap.rx.tsc.arr[i]);
-    INFO("pkt_no |%lu| set | dw | tx |%lu| rx |%lu|\n",
-         i, dataop_dw.tx.tsc.arr[i], dataop_dw.rx.tsc.arr[i]);
+    //      pkt#  rtt   epkt  rxc   ptx  txpkt txirq txmap  txcb txunm txdw  txdwc
+    INFO("| %lu | %lu | %lu | %lu | %lu | %lu | %lu | %lu | %lu | %lu | %lu | %lu\n", \
+         i, data_rtt.tsc.arr[i], data_rtt.epkt.arr[i], \
+         data_rtt.rx_count.arr[i], data_ps.tsc.arr[i], dataop_pkt.tx.tsc.arr[i], \
+         dataop_irq.tx.tsc.arr[i], dataop_map.tx.tsc.arr[i], dataop_callback.tx.tsc.arr[i], \
+         dataop_unmap.tx.tsc.arr[i], dataop_dw.tx.tsc.arr[i], data_ps.rx_count.arr[i]);
   }
+
+  INFO("\n\n\n");
+  INFO("| 0 | 20 | 30 | 60 | 40 | 20 | 40 | 50 | 13 \n");
+  INFO("| pkt# | post_rx | rx_pkt | rx_irq | rx_map | rx_cb | rx_unmap | rx_dw | rx_dw_c\n");
+  for(uint64_t i = 0; i < data_rtt.size; i++) {
+    //      pkt#  prx  rxpkt rxirq rxmap  rxcb rxunm  rxdw  rxdwc
+    INFO("| %lu | %lu | %lu | %lu | %lu | %lu | %lu | %lu | %lu\n", \
+         i, data_pr.tsc.arr[i], dataop_pkt.rx.tsc.arr[i], \
+         dataop_irq.rx.tsc.arr[i], dataop_map.tx.tsc.arr[i], dataop_callback.tx.tsc.arr[i], \
+         dataop_unmap.rx.tsc.arr[i], dataop_dw.rx.tsc.arr[i], data_pr.rx_count.arr[i]);
+  }
+
+  /* INFO("\n\n\n"); */
+  /* for(uint64_t i = 0; i < data_rtt.size; i++) { */
+  /*   INFO("pkt_no |%lu| set | 1 | rtt |%lu| ps |%lu| pr |%lu|\n", */
+  /*        i, data_rtt.tsc.arr[i], data_ps.tsc.arr[i], data_pr.tsc.arr[i]); */
+  /*   INFO("pkt_no |%lu| set | 2 | epkt |%lu| rx_count |%lu|\n", */
+  /*        i, data_rtt.epkt.arr[i], data_rtt.rx_count.arr[i]); */
+  /*   INFO("pkt_no |%lu| set | tx | pkt |%lu| irq |%lu| map |%lu| callback |%lu| unmap |%lu|\n", */
+  /*        i, dataop_pkt.tx.tsc.arr[i], dataop_irq.tx.tsc.arr[i], dataop_map.tx.tsc.arr[i], */
+  /*        dataop_callback.tx.tsc.arr[i], dataop_unmap.tx.tsc.arr[i]); */
+  /*   INFO("pkt_no |%lu| set | rx | pkt |%lu| irq |%lu| map |%lu| callback |%lu| unmap |%lu|\n", */
+  /*        i, dataop_pkt.rx.tsc.arr[i], dataop_irq.rx.tsc.arr[i], dataop_map.rx.tsc.arr[i], */
+  /*        dataop_callback.rx.tsc.arr[i], dataop_unmap.rx.tsc.arr[i]); */
+  /*   INFO("pkt_no |%lu| set | dw | tx |%lu| rx |%lu|\n", */
+  /*        i, dataop_dw.tx.tsc.arr[i], dataop_dw.rx.tsc.arr[i]); */
+  /* } */
 
   INFO("total rtt %lu\n", data_rtt.tsc.total);
   INFO("total rtt ps %lu\n", data_ps.tsc.total);
   INFO("total rtt pr %lu\n", data_pr.tsc.total);
+  INFO("total epkt %lu\n", data_rtt.epkt.total);
+  INFO("total rx_count %lu\n", data_rtt.rx_count.total);
+  INFO("total tx dw count %lu\n", data_ps.rx_count.total);
+  INFO("total rx dw count %lu\n", data_pr.rx_count.total);
 
 EXIT_START_RUNT:
   if(wrong_packet) {
@@ -1450,6 +1491,10 @@ static int select_dst_mac(uint32_t machine_no, uint8_t* dst_mac) {
     case MACHINE_NO_R4155:
       INFO("Select R415-5 Mac Address\n"); 
       dst_mac_char = MAC_R4155_E1000E;
+      break;
+    case MACHINE_NO_R4156:
+      INFO("Select R415-6 Mac Address\n"); 
+      dst_mac_char = MAC_R4156_E1000E;
       break;
     default:
       ERROR("unknown machine number %d\n", machine_no);

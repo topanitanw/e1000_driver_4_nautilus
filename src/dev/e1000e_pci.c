@@ -1010,7 +1010,6 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
 
   // #measure
   irq_end = rdtsc();
-
   if(which_op == op_tx) {
     measure.tx.irq_callback.start = callback_start;
     measure.tx.irq_callback.end = callback_end;
@@ -1560,8 +1559,8 @@ void e1000e_interpret_rxd(struct e1000e_state* state) {
   INFO("interpret rxd: data buffer addr: 0x%p\n", data_addr);
   INFO("interpret rxd: data length: %d\n", RXD_LENGTH(RXD_PREV_HEAD));
   INFO("interpret rxd: status: 0x%02x dd: %d\n",
-        RXD_STATUS(RXD_PREV_HEAD),
-        RXD_STATUS(RXD_PREV_HEAD).dd);
+       RXD_STATUS(RXD_PREV_HEAD),
+       RXD_STATUS(RXD_PREV_HEAD).dd);
   INFO("interpret rxd: error: 0x%02x\n", RXD_ERRORS(RXD_PREV_HEAD));
 }
 

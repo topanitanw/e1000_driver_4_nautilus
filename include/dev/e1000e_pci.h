@@ -65,6 +65,7 @@ struct operation {
   tsc_t irq_callback;
   tsc_t irq;
   tsc_t dev_wait;
+  uint32_t dev_wait_count;
 };
 typedef struct operation op_t;
 

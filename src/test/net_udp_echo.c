@@ -1422,7 +1422,7 @@ static void start_runt(void* in, void** out) {
   }
 
   INFO("\n\n\n");
-  INFO("| 0 | 20 | 30 | 60 | 40 | 20 | 40 | 50 | 13 \n");
+  INFO("| 0 | 20 | 30 | 60 | 40 | 20 | 40 | 50 | 70 \n");
   INFO("| pkt# | post_rx | rx_pkt | rx_irq | rx_map | rx_cb | rx_unmap | rx_dw | rx_dw_c\n");
   for(uint64_t i = 0; i < data_rtt.size; i++) {
     //      pkt#  prx  rxpkt rxirq rxmap  rxcb rxunm  rxdw  rxdwc

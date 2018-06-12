@@ -924,15 +924,19 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
         vec, excp->rip, s);
 
   // #measure
-  uint64_t irq_start = 0;
-  uint64_t irq_end = 0;
-  uint64_t callback_start = 0;
-  uint64_t callback_end = 0;
+  uint64_t irq_start = 0, irq_end = 0;
+  uint64_t callback_start = 0, callback_end = 0;
+  uint64_t irq_macro_start = 0, irq_macro_end = 0;
+  uint64_t irq_reg_start = 0, irq_reg_end = 0;
   enum pkt_op which_op = op_unknown; 
   
   GET_TSC(irq_start);
   struct e1000e_state* state = s;
+
+  GET_TSC(irq_reg_start);
   uint32_t icr = READ_MEM(state->dev, E1000E_ICR_OFFSET);
+  GET_TSC(irq_reg_end);
+
   uint32_t mask_int = icr & state->ims_reg;
   DEBUG("irq_handler fn: ICR: 0x%08x IMS: 0x%08x mask_int: 0x%08x\n",
         icr, state->ims_reg, mask_int);
@@ -965,27 +969,14 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   }
 
   if(mask_int & (E1000E_ICR_RXT0 | E1000E_ICR_RXO | E1000E_ICR_RXQ0)) {
-    which_op = op_rx;
     // receive interrupt
-    /* if(mask_int & E1000E_ICR_RXT0) { */
-    /*   DEBUG("irq_handler fn: handle the rxt0 interrupt\n"); */
-    /* } */
-
-    /* if(mask_int & E1000E_ICR_RXO) { */
-    /*   DEBUG("irq_handler fn: handle the rx0 interrupt\n"); */
-    /* } */
-   
-    // INFO("rx length %d\n", RXD_LENGTH(RXD_PREV_HEAD));
+    which_op = op_rx;
     GET_TSC(measure.rx.irq_unmap.start);
     e1000e_unmap_callback(state->rx_map,
                           (uint64_t **)&callback,
                           (void **)&context);
     GET_TSC(measure.rx.irq_unmap.end);
 
-    // e1000e_interpret_ims(state);
-    // TODO: check if we need this line
-    // WRITE_MEM(state->dev, E1000E_IMC_OFFSET, E1000E_ICR_RXO);
-    
     // checking errors
     if(RXD_ERRORS(RXD_PREV_HEAD)) {
       ERROR("irq_handler fn: receive an error packet\n");
@@ -1006,22 +997,39 @@ static int e1000e_irq_handler(excp_entry_t * excp, excp_vec_t vec, void *s) {
   DEBUG("irq_handler fn: end irq\n\n\n");
   // DO NOT DELETE THIS LINE.
   // must have this line at the end of the handler
+  GET_TSC(irq_macro_start);
   IRQ_HANDLER_END();
+  GET_TSC(irq_macro_end);
 
   // #measure
-  irq_end = rdtsc();
+  GET_TSC(irq_end);
   if(which_op == op_tx) {
+    measure.irq_tx++;
     measure.tx.irq_callback.start = callback_start;
     measure.tx.irq_callback.end = callback_end;
     measure.tx.irq.start = irq_start;
     measure.tx.irq.end = irq_end;
-  } else {
+    measure.tx.irq_reg.start = irq_reg_start;
+    measure.tx.irq_reg.end = irq_reg_end;
+    measure.tx.irq_macro.start = irq_macro_start;
+    measure.tx.irq_macro.end = irq_macro_end;
+  }
+
+  if(which_op == op_rx) {
+    measure.irq_rx++;
     measure.rx.irq_callback.start = callback_start;
     measure.rx.irq_callback.end = callback_end;
     measure.rx.irq.start = irq_start;
     measure.rx.irq.end = irq_end;
+    measure.rx.irq_reg.start = irq_reg_start;
+    measure.rx.irq_reg.end = irq_reg_end;
+    measure.rx.irq_macro.start = irq_macro_start;
+    measure.rx.irq_macro.end = irq_macro_end;
   }
-    
+
+  if(which_op == op_unknown) {
+    measure.irq_unknown++;
+  }
   return 0;
 }
 

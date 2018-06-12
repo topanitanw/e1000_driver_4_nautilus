@@ -59,11 +59,14 @@ typedef struct tsc tsc_t;
 
 struct operation {
   // should be a postx, but I did last week.
-  tsc_t postx_map;
-  tsc_t xpkt;
-  tsc_t irq_unmap;
-  tsc_t irq_callback;
-  tsc_t irq;
+  tsc_t postx_map; // measure the time in post_tx, post_rx
+  tsc_t xpkt; // send_packet, receive_packet 
+  tsc_t irq; // irq_handler
+  tsc_t irq_unmap; // unmap callback in the irq function
+  tsc_t irq_callback; // invoke the callback function in the irq
+  
+  tsc_t irq_macro; // IRQ_HANDLER_END() macro
+  tsc_t irq_reg; // reading a value from the reg in the irq function
   tsc_t dev_wait;
   uint32_t dev_wait_count;
 };
@@ -72,6 +75,9 @@ typedef struct operation op_t;
 struct iteration {
   op_t tx;
   op_t rx;
+  uint32_t irq_tx;
+  uint32_t irq_rx;
+  uint32_t irq_unknown; // count the unknown irq
 };
 typedef struct iteration iteration_t;
 
